@@ -1,4 +1,9 @@
 ﻿// Config.cpp
+// 注意：配置模块使用标准 std::string / std::vector
+// 不接入 GloMemPool，因为：
+// 1. 只在启动时加载一次，不影响性能测试
+// 2. 使用标准库更安全、易维护
+// 3. 避免过度复杂化非关键路径
 #include "Config.h"
 #include "ConfigData.h"
 

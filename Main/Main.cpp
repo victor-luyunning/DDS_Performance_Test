@@ -80,8 +80,8 @@ int main() {
 
         // ========== 根据角色启动相应模式 ==========
         int result = cfg.m_isPositive
-            ? dds_manager->runPublisher(100, 100)  
-            : dds_manager->runSubscriber();         
+            ? dds_manager->runPublisher(cfg)  
+            : dds_manager->runSubscriber(cfg);         
 
         // ================= 清理资源 =================
         dds_manager->shutdown();

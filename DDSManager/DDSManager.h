@@ -1,9 +1,7 @@
 ﻿// DDSManager.h
 #pragma once
-#include <string>
-#include <functional>
 #include <iostream>
-#include <thread>
+#include <functional>
 
 #include "ConfigData.h"
 #include "DomainParticipant.h"
@@ -35,8 +33,8 @@ public:
     bool initialize(OnDataAvailableCallback callback = nullptr);
     void shutdown();
 
-    int runPublisher(int sendCount = 100, int intervalMs = 100);
-    int runSubscriber(); // 阻塞直到收到一条消息
+    int runPublisher(const ConfigData& config);
+    int runSubscriber(const ConfigData& config); // 阻塞直到收到一条消息
 
     DDS::DomainParticipant* get_participant() const { return participant_; }
     DDS::DataWriter* get_data_writer() const { return data_writer_; }
@@ -70,6 +68,6 @@ private:
 
     bool is_initialized_;
 
-    bool prepareTestData(TestData& sample, int size);
+    bool prepareTestData(TestData& sample, int minSize, int maxSize);
     void cleanupTestData(TestData& sample);
 };

@@ -233,9 +233,9 @@ void Logger::setupLogger(const std::string& logDirectory,
     }
 }
 
-void Logger::log(const std::string& message) {
+void Logger::log(const std::string& msg) {
     if (pImpl_->isInitialized_) {
-        std::string line = "[LOG] " + pImpl_->getCurrentTimeStr() + " " + message;
+        std::string line = "[LOG] " + pImpl_->getCurrentTimeStr() + " " + msg;
         pImpl_->pushLog(line);
     }
 }
@@ -278,10 +278,10 @@ void Logger::logResult(const std::string& result) {
     }
 }
 
-void Logger::logAndPrint(const std::string& message) {
-    std::cout << message << std::endl;
+void Logger::logAndPrint(const std::string& msg) {
+    std::cout << msg << std::endl;
     if (pImpl_->isInitialized_) {
-        std::string line = "[LOG] " + pImpl_->getCurrentTimeStr() + " " + message;
+        std::string line = "[LOG] " + pImpl_->getCurrentTimeStr() + " " + msg;
         pImpl_->pushLog(line);
     }
 }
