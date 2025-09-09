@@ -1,6 +1,6 @@
 ﻿// DDSManager.h
 #pragma once
-#include <iostream>
+#include <string>
 #include <functional>
 
 #include "ConfigData.h"
@@ -17,36 +17,40 @@
 
 struct TestData;
 struct TestDataSeq;
-class TestDataTypeSupport;
 
-using OnDataAvailableCallback = std::function<void(const TestData*)>;
+using OnDataReceivedCallback = std::function<void(const TestData&, const DDS::SampleInfo&)>;
+using OnEndOfRoundCallback = std::function<void()>;
 
 class DDSManager {
 public:
-    explicit DDSManager(const ConfigData& config, const std::string xml_qos_file_path);
-
+    explicit DDSManager(const ConfigData& config, const std::string& xml_qos_file_path);
     ~DDSManager();
 
     DDSManager(const DDSManager&) = delete;
     DDSManager& operator=(const DDSManager&) = delete;
 
-    bool initialize(OnDataAvailableCallback callback = nullptr);
+    // 初始化 DDS 实体，传入回调（供外部测试模块使用）
+    bool initialize(
+        OnDataReceivedCallback dataCallback = nullptr,
+        OnEndOfRoundCallback endCallback = nullptr
+    );
+
     void shutdown();
 
-    int runPublisher(const ConfigData& config);
-    int runSubscriber(const ConfigData& config); // 阻塞直到收到一条消息
-
+    // 提供实体访问接口
     DDS::DomainParticipant* get_participant() const { return participant_; }
     DDS::DataWriter* get_data_writer() const { return data_writer_; }
     DDS::DataReader* get_data_reader() const { return data_reader_; }
     bool is_initialized() const { return is_initialized_; }
 
-    bool hasDataReceived() const { return data_received_.load(); }
-    void resetDataReceived() { data_received_.store(false); }
+    // 辅助函数
+    bool prepareTestData(TestData& sample, int minSize, int maxSize);
+    void cleanupTestData(TestData& sample);
 
 private:
     std::string xml_qos_file_path_;
 
+    // 配置字段
     DDS::DomainId_t domain_id_;
     std::string topic_name_;
     std::string type_name_;
@@ -56,18 +60,15 @@ private:
     std::string data_writer_qos_name_;
     std::string data_reader_qos_name_;
 
-    DDS::DomainParticipantFactory* factory_;
-    DDS::DomainParticipant* participant_;
-    DDS::Topic* topic_;
-    DDS::DataWriter* data_writer_;
-    DDS::DataReader* data_reader_;
+    // DDS 实体
+    DDS::DomainParticipantFactory* factory_ = nullptr;
+    DDS::DomainParticipant* participant_ = nullptr;
+    DDS::Topic* topic_ = nullptr;
+    DDS::DataWriter* data_writer_ = nullptr;
+    DDS::DataReader* data_reader_ = nullptr;
 
     class MyDataReaderListener;
-    MyDataReaderListener* listener_;
-    std::atomic<bool> data_received_{ false };
+    MyDataReaderListener* listener_ = nullptr;
 
-    bool is_initialized_;
-
-    bool prepareTestData(TestData& sample, int minSize, int maxSize);
-    void cleanupTestData(TestData& sample);
+    bool is_initialized_ = false;
 };

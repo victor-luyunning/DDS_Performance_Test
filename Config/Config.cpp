@@ -1,5 +1,4 @@
-﻿// Config.cpp
-// 注意：配置模块使用标准 std::string / std::vector
+﻿// 注意：配置模块使用标准 std::string / std::vector
 // 不接入 GloMemPool，因为：
 // 1. 只在启动时加载一次，不影响性能测试
 // 2. 使用标准库更安全、易维护
@@ -19,9 +18,9 @@
 using json = nlohmann::ordered_json;
 
 namespace {
-    void printArrayField(std::ostream& out, const std::string& name, const std::vector<int>& vec, bool hasData) {
+    void printArrayField(std::ostream& out, const std::string& name, const std::vector<int>& vec) {
         out << "\t" << name << ":\t";
-        if (hasData && !vec.empty()) {
+        if (!vec.empty()) {
             bool first = true;
             for (const auto& val : vec) {
                 if (!first) out << ", ";
@@ -64,6 +63,7 @@ public:
             throw std::runtime_error("JSON 文件中没有任何配置");
         }
 
+        // 初始化 current_（后续通过 selectConfig 赋值）
         current_ = configs_[0];
     }
 
@@ -119,20 +119,12 @@ public:
             cfg.has_configs = true;
         }
 
-        if (cfg.has_m_minSize) {
+        // 设置 m_loopNum
+        if (cfg.has_m_minSize && !cfg.m_minSize.empty()) {
             cfg.m_loopNum = static_cast<int>(cfg.m_minSize.size());
         }
         else {
             cfg.m_loopNum = item.value("m_loopNum", 0);
-        }
-
-        cfg.m_resultPath = item.value("m_resultPath", "");
-
-        if (name.rfind("tp::", 0) == 0 ||
-            name.rfind("delay::", 0) == 0 ||
-            name.rfind("scale::", 0) == 0 ||
-            name.rfind("concurrence_delay::", 0) == 0) {
-            cfg.m_resultPath = generateResultPath(cfg);
         }
 
         return cfg;
@@ -165,9 +157,10 @@ public:
             "default.csv";
     }
 
-    const ConfigData* findPairedConfig() const {
+    // 找到配对配置（positive ↔ negative）
+    const ConfigData* findPairedConfig(const std::string& name) const {
         for (size_t i = 0; i < configs_.size(); ++i) {
-            if (configs_[i].name == current_.name) {
+            if (configs_[i].name == name) {
                 size_t currentIndex = i;
                 size_t pairedIndex = (currentIndex % 2 == 0) ? currentIndex + 1 : currentIndex - 1;
                 if (pairedIndex < configs_.size()) {
@@ -179,24 +172,70 @@ public:
         return nullptr;
     }
 
-    std::pair<std::vector<int>, bool> getArrayFallback(
-        bool hasCurrent,
-        const std::vector<int>& currentArray,
-        const std::function<std::vector<int>(const ConfigData*)>& getter,
-        const std::function<bool(const ConfigData*)>& hasGetter
-    ) const {
-        if (hasCurrent) {
-            return { currentArray, true };
+    // 应用 fallback：从配对配置复制缺失的数组
+    void applyFallbackToConfig(ConfigData& target, const ConfigData* source) {
+        if (!target.has_m_minSize && source && source->has_m_minSize) {
+            target.m_minSize = source->m_minSize;
+            target.has_m_minSize = true;
+            Logger::getInstance().logAndPrint("[Config] fallback: m_minSize 从配对配置复制");
         }
-
-        const ConfigData* pairedConfig = findPairedConfig();
-        if (pairedConfig && hasGetter(pairedConfig)) {
-            return { getter(pairedConfig), true };
+        if (!target.has_m_maxSize && source && source->has_m_maxSize) {
+            target.m_maxSize = source->m_maxSize;
+            target.has_m_maxSize = true;
+            Logger::getInstance().logAndPrint("[Config] fallback: m_maxSize 从配对配置复制");
         }
-
-        return { currentArray, false };
+        if (!target.has_m_sendCount && source && source->has_m_sendCount) {
+            target.m_sendCount = source->m_sendCount;
+            target.has_m_sendCount = true;
+            Logger::getInstance().logAndPrint("[Config] fallback: m_sendCount 从配对配置复制");
+        }
+        if (!target.has_m_sendDelayCount && source && source->has_m_sendDelayCount) {
+            target.m_sendDelayCount = source->m_sendDelayCount;
+            target.has_m_sendDelayCount = true;
+        }
+        if (!target.has_m_sendDelay && source && source->has_m_sendDelay) {
+            target.m_sendDelay = source->m_sendDelay;
+            target.has_m_sendDelay = true;
+        }
+        if (!target.has_m_sendPrintGap && source && source->has_m_sendPrintGap) {
+            target.m_sendPrintGap = source->m_sendPrintGap;
+            target.has_m_sendPrintGap = true;
+        }
+        if (!target.has_m_recvPrintGap && source && source->has_m_recvPrintGap) {
+            target.m_recvPrintGap = source->m_recvPrintGap;
+            target.has_m_recvPrintGap = true;
+            Logger::getInstance().logAndPrint("[Config] fallback: m_recvPrintGap 从配对配置复制");
+        }
+        // 可继续添加其他字段
     }
 
+    // 补齐所有数组到 m_loopNum 长度
+    void normalizeConfigArrays(ConfigData& cfg) {
+        auto normalize = [&](std::vector<int>& vec) {
+            if (vec.empty()) {
+                vec = { 1 }; // 默认值
+            }
+            if (vec.size() < static_cast<size_t>(cfg.m_loopNum)) {
+                int lastVal = vec.back();
+                vec.resize(cfg.m_loopNum, lastVal);
+                Logger::getInstance().logAndPrint(
+                    "[Config] 数组长度不足，已用最后一个值 " + std::to_string(lastVal) +
+                    " 填充至 " + std::to_string(cfg.m_loopNum) + " 个元素"
+                );
+            }
+            };
+
+        normalize(cfg.m_minSize);
+        normalize(cfg.m_maxSize);
+        normalize(cfg.m_sendCount);
+        normalize(cfg.m_recvPrintGap);
+        normalize(cfg.m_sendDelay);
+        normalize(cfg.m_sendDelayCount);
+        normalize(cfg.m_sendPrintGap);
+        // 其他需要的 vector...
+    }
+
+    // 打印当前配置（直接使用原始字段）
     void printCurrentConfig(const ConfigData& c, std::ostream& out) const {
         out << "ZRDDS-PerfBench-Config:" << c.name << std::endl;
 
@@ -223,40 +262,13 @@ public:
         out << "\tm_activeLoop:\t" << c.m_activeLoop << std::endl;
         out << "\tm_loopNum:\t" << c.m_loopNum << std::endl;
 
-        std::vector<std::tuple<
-            const char*,
-            const std::vector<int>&,
-            bool,
-            std::function<std::vector<int>(const ConfigData*)>,
-            std::function<bool(const ConfigData*)>
-            >> fallbackArrayFields = {
-                { "m_minSize", c.m_minSize, c.has_m_minSize,
-                  [](const ConfigData* config) { return config->m_minSize; },
-                  [](const ConfigData* config) { return config->has_m_minSize; } },
-                { "m_maxSize", c.m_maxSize, c.has_m_maxSize,
-                  [](const ConfigData* config) { return config->m_maxSize; },
-                  [](const ConfigData* config) { return config->has_m_maxSize; } },
-                { "m_sendCount", c.m_sendCount, c.has_m_sendCount,
-                  [](const ConfigData* config) { return config->m_sendCount; },
-                  [](const ConfigData* config) { return config->has_m_sendCount; } },
-                { "m_sendDelayCount", c.m_sendDelayCount, c.has_m_sendDelayCount,
-                  [](const ConfigData* config) { return config->m_sendDelayCount; },
-                  [](const ConfigData* config) { return config->has_m_sendDelayCount; } },
-                { "m_sendDelay", c.m_sendDelay, c.has_m_sendDelay,
-                  [](const ConfigData* config) { return config->m_sendDelay; },
-                  [](const ConfigData* config) { return config->has_m_sendDelay; } },
-                { "m_sendPrintGap", c.m_sendPrintGap, c.has_m_sendPrintGap,
-                  [](const ConfigData* config) { return config->m_sendPrintGap; },
-                  [](const ConfigData* config) { return config->has_m_sendPrintGap; } },
-                { "m_recvPrintGap", c.m_recvPrintGap, c.has_m_recvPrintGap,
-                  [](const ConfigData* config) { return config->m_recvPrintGap; },
-                  [](const ConfigData* config) { return config->has_m_recvPrintGap; } }
-        };
-
-        for (const auto& [name, currentVec, hasCurrent, getter, hasGetter] : fallbackArrayFields) {
-            auto [finalVec, hasData] = getArrayFallback(hasCurrent, currentVec, getter, hasGetter);
-            printArrayField(out, name, finalVec, hasData);
-        }
+        printArrayField(out, "m_minSize", c.m_minSize);
+        printArrayField(out, "m_maxSize", c.m_maxSize);
+        printArrayField(out, "m_sendCount", c.m_sendCount);
+        printArrayField(out, "m_sendDelayCount", c.m_sendDelayCount);
+        printArrayField(out, "m_sendDelay", c.m_sendDelay);
+        printArrayField(out, "m_sendPrintGap", c.m_sendPrintGap);
+        printArrayField(out, "m_recvPrintGap", c.m_recvPrintGap);
 
         out << "\tm_resultPath:\t" << c.m_resultPath << std::endl;
     }
@@ -308,13 +320,36 @@ void Config::selectConfig(size_t index) {
     if (index >= pImpl_->configs_.size()) {
         throw std::out_of_range("配置索引超出范围");
     }
-    pImpl_->current_ = pImpl_->configs_[index];
+
+    ConfigData newConfig = pImpl_->configs_[index];
+
+    // 应用 fallback：从配对配置复制缺失的数组
+    const ConfigData* pairedConfig = pImpl_->findPairedConfig(newConfig.name);
+    if (pairedConfig) {
+        pImpl_->applyFallbackToConfig(newConfig, pairedConfig);
+    }
+
+    // 补齐所有数组到 m_loopNum 长度
+    pImpl_->normalizeConfigArrays(newConfig);
+
+    pImpl_->current_ = std::move(newConfig);
 }
 
 void Config::selectConfig(const std::string& name) {
     for (const auto& cfg : pImpl_->configs_) {
         if (cfg.name == name) {
-            pImpl_->current_ = cfg;
+            ConfigData newConfig = cfg;
+
+            // 应用 fallback
+            const ConfigData* pairedConfig = pImpl_->findPairedConfig(newConfig.name);
+            if (pairedConfig) {
+                pImpl_->applyFallbackToConfig(newConfig, pairedConfig);
+            }
+
+            // 补齐数组
+            pImpl_->normalizeConfigArrays(newConfig);
+
+            pImpl_->current_ = std::move(newConfig);
             return;
         }
     }

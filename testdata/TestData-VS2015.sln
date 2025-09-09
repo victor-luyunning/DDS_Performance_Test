@@ -16,6 +16,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Logger", "..\Logger\Logger.
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GloMemPool", "..\GloMemPool\GloMemPool.vcxproj", "{6B7378E7-92EA-448A-AE6A-BF4F42FCD01E}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ThroughPut", "..\ThroughPut\ThroughPut.vcxproj", "{3F7C1FCA-07C1-450B-96C8-59FEFD3EC263}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug DLL|x64 = Debug DLL|x64
@@ -80,6 +82,14 @@ Global
 		{6B7378E7-92EA-448A-AE6A-BF4F42FCD01E}.Release DLL|x64.Build.0 = Release|x64
 		{6B7378E7-92EA-448A-AE6A-BF4F42FCD01E}.Release|x64.ActiveCfg = Release|x64
 		{6B7378E7-92EA-448A-AE6A-BF4F42FCD01E}.Release|x64.Build.0 = Release|x64
+		{3F7C1FCA-07C1-450B-96C8-59FEFD3EC263}.Debug DLL|x64.ActiveCfg = Debug|x64
+		{3F7C1FCA-07C1-450B-96C8-59FEFD3EC263}.Debug DLL|x64.Build.0 = Debug|x64
+		{3F7C1FCA-07C1-450B-96C8-59FEFD3EC263}.Debug|x64.ActiveCfg = Debug|x64
+		{3F7C1FCA-07C1-450B-96C8-59FEFD3EC263}.Debug|x64.Build.0 = Debug|x64
+		{3F7C1FCA-07C1-450B-96C8-59FEFD3EC263}.Release DLL|x64.ActiveCfg = Release|x64
+		{3F7C1FCA-07C1-450B-96C8-59FEFD3EC263}.Release DLL|x64.Build.0 = Release|x64
+		{3F7C1FCA-07C1-450B-96C8-59FEFD3EC263}.Release|x64.ActiveCfg = Release|x64
+		{3F7C1FCA-07C1-450B-96C8-59FEFD3EC263}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

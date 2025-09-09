@@ -14,6 +14,7 @@
 #include "Config.h"
 #include "Logger.h"
 #include "GloMemPool.h"
+#include "ThroughPut.h"
 
 #include "TestData.h"
 #include "TestDataDataWriter.h"

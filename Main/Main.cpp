@@ -10,28 +10,18 @@
 #include <filesystem>
 #include <sstream>
 #include <iomanip>
-#include <ctime>      
+#include <ctime>
 
+// --- 项目头文件 ---
 #include "Main.h"
 
 namespace {
-    std::atomic<bool> g_data_received{ false };
     std::string json_file_path = GlobalConfig::DEFAULT_JSON_CONFIG_PATH;
     std::string qos_file_path = GlobalConfig::DEFAULT_QOS_XML_PATH;
     std::string logDir = GlobalConfig::LOG_DIRECTORY;
     std::string logPrefix = GlobalConfig::LOG_FILE_PREFIX;
     std::string logSuffix = GlobalConfig::LOG_FILE_SUFFIX;
     bool loggingEnabled = true;
-}
-
-// --- Subscriber 回调函数 ---
-static void subscriber_callback(const TestData* sample) {
-    if (sample) {
-        DDS_ULong data_len = sample->value._length;
-        std::string logMsg = "[Subscriber Callback] 收到数据，长度: " + std::to_string(data_len);
-        Logger::getInstance().logAndPrint(logMsg);
-    }
-    g_data_received.store(true);
 }
 
 // --- 主函数 ---
@@ -46,58 +36,82 @@ int main() {
 
         // ================= 初始化日志系统 =================
         Logger::setupLogger(logDir, logPrefix, logSuffix);
-        Config config(json_file_path);
-        
 
-        // ================= 与用户交互选择配置 =================
+        // ================= 加载并选择配置 =================
+        Config config(json_file_path);
         if (!config.promptAndSelectConfig(&Logger::getInstance())) {
-            Logger::getInstance().logAndPrint("用户选择配置失败或取消");
+            Logger::getInstance().logAndPrint("用户取消选择或配置加载失败");
             return EXIT_FAILURE;
         }
+
         Logger::getInstance().logAndPrint("\n=== 当前选中的配置 ===");
         std::ostringstream cfgStream;
         config.printCurrentConfig(cfgStream);
         Logger::getInstance().logAndPrint(cfgStream.str());
 
-        const auto& cfg = config.getCurrentConfig();
+        const ConfigData& cfg = config.getCurrentConfig();
 
-
-        // ================= 创建 DDSManager 并初始化 =================
+        // ================= 创建 DDSManager =================
         std::unique_ptr<DDSManager> dds_manager = std::make_unique<DDSManager>(cfg, qos_file_path);
 
-        OnDataAvailableCallback callback = nullptr;
-        if (!cfg.m_isPositive) {
-            // Subscriber 需要回调（虽然 runSubscriber 内部用了临时 listener，但 initialize 时最好传入）
-            callback = subscriber_callback;
+        // ================= 创建测试策略对象 =================
+        std::unique_ptr<runEntityInterface> tester = std::make_unique<Throughput>(*dds_manager);
+
+        // ================= 定义回调函数 =================
+        // 注意：这些回调在 initialize 时传入，用于通知 tester
+        OnDataReceivedCallback data_callback = [](const TestData& sample, const DDS::SampleInfo& info) {
+            // 可选：记录收到数据（通常 tester 内部统计即可）
+            // Logger::getInstance().logAndPrint("[Subscriber] 收到一条数据");
+            };
+
+        OnEndOfRoundCallback end_callback = []() {
+            // 通知 ThroughputTester 本轮结束
+            // 实际逻辑在 tester 内部通过 condition_variable 唤醒
+            // 这里可以空实现，因为 tester 已绑定状态
+            // 如果 tester 需要感知，可通过成员函数触发
+            };
+
+        // ================= 初始化 DDSManager =================
+        if (cfg.m_isPositive) {
+            // Publisher：不需要数据回调
+            if (!dds_manager->initialize()) {
+                Logger::getInstance().logAndPrint("[Error] DDSManager 初始化失败（Publisher）");
+                return EXIT_FAILURE;
+            }
+        }
+        else {
+            // Subscriber：需要接收数据和结束通知
+            if (!dds_manager->initialize(data_callback, end_callback)) {
+                Logger::getInstance().logAndPrint("[Error] DDSManager 初始化失败（Subscriber）");
+                return EXIT_FAILURE;
+            }
         }
 
-        if (!dds_manager->initialize(callback)) {
-            Logger::getInstance().logAndPrint("[Error] DDSManager 初始化失败！");
-            return EXIT_FAILURE;
-        }
+        Logger::getInstance().logAndPrint("DDSManager 初始化成功，开始运行测试...");
 
-        Logger::getInstance().logAndPrint("DDSManager 初始化成功，开始运行...");
-
-        // ========== 根据角色启动相应模式 ==========
+        // ================= 启动测试 =================
         int result = cfg.m_isPositive
-            ? dds_manager->runPublisher(cfg)  
-            : dds_manager->runSubscriber(cfg);         
+            ? tester->runPublisher(cfg)   // 发布者模式
+            : tester->runSubscriber(cfg); // 订阅者模式
+
+        if (result == 0) {
+            Logger::getInstance().logAndPrint("测试运行完成，结果正常。");
+        }
+        else {
+            Logger::getInstance().logAndPrint("测试运行中发生错误。");
+        }
 
         // ================= 清理资源 =================
         dds_manager->shutdown();
-        Logger::getInstance().logAndPrint("DDS 资源清理完成");
+        Logger::getInstance().logAndPrint("DDS 资源已清理");
 
         GloMemPool::finalize();
-        GloMemPool::logStats(); // 输出最终内存使用统计，便于性能分析
+        GloMemPool::logStats();  // 输出内存池统计
 
-        // 可选：防止闪退（仅调试时有用）
-        // std::cout << "\n按回车键退出..." << std::endl;
-        // std::cin.get();
-
-        return EXIT_SUCCESS;
+        return result == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
     }
     catch (const std::exception& e) {
-        std::string errorMsg = "[Error] " + std::string(e.what());
+        std::string errorMsg = "[Error] 异常: " + std::string(e.what());
         if (loggingEnabled) {
             Logger::getInstance().logAndPrint(errorMsg);
         }
@@ -107,7 +121,7 @@ int main() {
         return EXIT_FAILURE;
     }
     catch (...) {
-        std::string errorMsg = "[Error] 程序发生未捕获的异常";
+        std::string errorMsg = "[Error] 未捕获的异常";
         if (loggingEnabled) {
             Logger::getInstance().logAndPrint(errorMsg);
         }
