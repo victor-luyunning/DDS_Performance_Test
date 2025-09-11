@@ -15,15 +15,12 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="ThroughPut.cpp">
+    <ClCompile Include="MetricsReport.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="ThroughPut.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="TestRoundResult.h">
+    <ClInclude Include="MetricsReport.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

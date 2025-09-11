@@ -21,8 +21,8 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{df2e23ea-30dc-4fc7-9bfb-dcc4d8550567}</ProjectGuid>
-    <RootNamespace>Main</RootNamespace>
+    <ProjectGuid>{3531f59b-4057-4c98-b109-80fbb244e286}</ProjectGuid>
+    <RootNamespace>ResourceUtilization</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -40,7 +40,7 @@
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
@@ -100,16 +100,13 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;_ZRDDSCPPINTERFACE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>..\include;..\Config;..\DDSManager;..\Logger;..\testdata;$(ZRDDS_HOME)\include\CPlusPlusInterface;$(ZRDDS_HOME)\include\ZRDDSCoreInterface;..\GloMemPool;..\ThroughPut;..\MetricsReport;..\ResourceUtilization;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>..\GloMemPool;$(ZRDDS_HOME)\include\ZRDDSCoreInterface;$(ZRDDS_HOME)\include\CPlusPlusInterface</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ZRDDS_HOME)\lib;..\testdata\x64\Debug;D:\Windows Kits\10\Lib\10.0.26100.0\um\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>ZRDDSCppzd_VS2019.lib;Config.lib;DDSManager.lib;Logger.lib;GloMemPool.lib;ThroughPut.lib;ResourceUtilization.lib;MetricsReport.lib;Ws2_32.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -127,14 +124,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\testdata\TestData.cpp" />
-    <ClCompile Include="..\testdata\TestDataTypeSupport.cpp" />
-    <ClCompile Include="Main.cpp" />
+    <ClCompile Include="ResourceUtilization.cpp" />
+    <ClCompile Include="SysMetrics.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\testdata\TestData.h" />
-    <ClInclude Include="..\testdata\TestDataTypeSupport.h" />
-    <ClInclude Include="Main.h" />
+    <ClInclude Include="ResourceUtilization.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

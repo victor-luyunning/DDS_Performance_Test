@@ -90,7 +90,7 @@ public:
         cfg.m_logTimeStamp = item.value("m_logTimeStamp", true);
         cfg.m_checkSample = item.value("m_checkSample", false);
         cfg.m_delayMode = item.value("m_delayMode", 0);
-        cfg.m_activeLoop = item.value("m_activeLoop", 0);
+        
 
         auto load_vector = [&](const std::string& key, std::vector<int>& vec, bool& has) {
             auto it = item.find(key);
@@ -119,13 +119,9 @@ public:
             cfg.has_configs = true;
         }
 
-        // 设置 m_loopNum
-        if (cfg.has_m_minSize && !cfg.m_minSize.empty()) {
-            cfg.m_loopNum = static_cast<int>(cfg.m_minSize.size());
-        }
-        else {
-            cfg.m_loopNum = item.value("m_loopNum", 0);
-        }
+        cfg.m_loopNum = 0;
+        cfg.m_activeLoop = 0;
+        cfg.m_resultPath = generateResultPath(cfg); 
 
         return cfg;
     }
@@ -205,12 +201,49 @@ public:
             target.m_recvPrintGap = source->m_recvPrintGap;
             target.has_m_recvPrintGap = true;
             Logger::getInstance().logAndPrint("[Config] fallback: m_recvPrintGap 从配对配置复制");
-        }
-        // 可继续添加其他字段
+        }       
     }
 
     // 补齐所有数组到 m_loopNum 长度
     void normalizeConfigArrays(ConfigData& cfg) {
+        int targetLoopNum = cfg.m_loopNum; // 用户显式设置的值
+
+        // 如果用户没设，则从任一存在的数组中推导
+        if (targetLoopNum == 0) {
+            // 检查多个可能的向量，取最大长度作为 loopNum
+            std::vector<const std::vector<int>*> candidates = {
+                &cfg.m_minSize,
+                &cfg.m_maxSize,
+                &cfg.m_sendCount,
+                &cfg.m_recvPrintGap,
+                &cfg.m_sendDelay,
+                &cfg.m_sendDelayCount,
+                &cfg.m_sendPrintGap
+                // 添加其他你觉得可以决定 loopNum 的 vector
+            };
+
+            for (const auto* vec : candidates) {
+                if (!vec->empty()) {
+                    targetLoopNum = std::max(targetLoopNum, static_cast<int>(vec->size()));
+                }
+            }
+            // 如果还是 0，说明所有数组都空，至少一轮
+            if (targetLoopNum == 0) {
+                targetLoopNum = 1;
+            }
+
+            cfg.m_loopNum = targetLoopNum;
+
+            Logger::getInstance().logAndPrint(
+                "[Config] 推导 m_loopNum = " + std::to_string(targetLoopNum)
+            );
+        }
+        else {
+            Logger::getInstance().logAndPrint(
+                "[Config] 使用用户指定 m_loopNum = " + std::to_string(targetLoopNum)
+            );
+        }
+
         auto normalize = [&](std::vector<int>& vec) {
             if (vec.empty()) {
                 vec = { 1 }; // 默认值
@@ -438,4 +471,55 @@ bool Config::promptAndSelectConfig(void* logger) {
             continue;
         }
     }
+}
+
+void Config::printConfigToStream(const ConfigData& c, std::ostream& out) {
+    out << "ZRDDS-PerfBench-Config:" << c.name << "-Round-" << c.m_activeLoop << std::endl;
+
+    out << "\tm_dpfQosName:\t" << c.m_dpfQosName << std::endl;
+    out << "\tm_dpQosName:\t" << c.m_dpQosName << std::endl;
+    out << "\tm_pubQosName:\t" << c.m_pubQosName << std::endl;
+    out << "\tm_subQosName:\t" << c.m_subQosName << std::endl;
+    out << "\tm_writerQosName:\t" << c.m_writerQosName << std::endl;
+    out << "\tm_readerQosName:\t" << c.m_readerQosName << std::endl;
+    out << "\tm_typeName:\t" << c.m_typeName << std::endl;
+    out << "\tm_topicName:\t" << c.m_topicName << std::endl;
+    out << "\tm_domainId:\t" << c.m_domainId << std::endl;
+    out << "\tm_isPositive:\t" << (c.m_isPositive ? "true" : "false") << std::endl;
+    out << "\tm_useTaskNextSample:\t" << (c.m_useTaskNextSample ? "true" : "false") << std::endl;
+    out << "\tm_useDataArrived:\t" << (c.m_useDataArrived ? "true" : "false") << std::endl;
+    out << "\tm_remoteNum:\t" << c.m_remoteNum << std::endl;
+    out << "\tm_userAction:\t" << c.m_userAction << std::endl;
+    out << "\tm_latencyMode:\t" << c.m_latencyMode << std::endl;
+    out << "\tm_useSyncDelay:\t" << (c.m_useSyncDelay ? "true" : "false") << std::endl;
+    out << "\tm_clockDevName:\t" << c.m_clockDevName << std::endl;
+    out << "\tm_logTimeStamp:\t" << (c.m_logTimeStamp ? "true" : "false") << std::endl;
+    out << "\tm_checkSample:\t" << (c.m_checkSample ? "true" : "false") << std::endl;
+    out << "\tm_delayMode:\t" << c.m_delayMode << std::endl;
+    out << "\tm_activeLoop:\t" << c.m_activeLoop << std::endl;
+    out << "\tm_loopNum:\t" << c.m_loopNum << std::endl;
+
+    auto printVec = [&](const std::string& name, const std::vector<int>& vec) {
+        out << "\t" << name << ":\t";
+        if (vec.empty()) {
+            out << "(empty)";
+        }
+        else {
+            for (size_t i = 0; i < vec.size(); ++i) {
+                if (i > 0) out << ", ";
+                out << vec[i];
+            }
+        }
+        out << std::endl;
+        };
+
+    printVec("m_minSize", c.m_minSize);
+    printVec("m_maxSize", c.m_maxSize);
+    printVec("m_sendCount", c.m_sendCount);
+    printVec("m_sendDelayCount", c.m_sendDelayCount);
+    printVec("m_sendDelay", c.m_sendDelay);
+    printVec("m_sendPrintGap", c.m_sendPrintGap);
+    printVec("m_recvPrintGap", c.m_recvPrintGap);
+
+    out << "\tm_resultPath:\t" << c.m_resultPath << std::endl;
 }

@@ -28,6 +28,8 @@ public:
 
     bool promptAndSelectConfig(void* logger = nullptr);  // logger 仍 void* 保持兼容
 
+    static void printConfigToStream(const ConfigData& c, std::ostream& out);
+
 private:
     class Impl;  // Pimpl 实现类
     std::unique_ptr<Impl> pImpl_;

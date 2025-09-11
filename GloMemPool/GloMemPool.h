@@ -1,57 +1,66 @@
-// GloMemPool.h
+ï»¿// GloMemPool.h
 #pragma once
 #include <cstddef>
 #include <string>
 
 #include "ZRMemPool.h"
 
-// ¿ÉÑ¡£º¶¨ÒåÕâ¸öºêÀ´¿ªÆô new/delete ÖØÔØ£¨½¨ÒéÔÚĞÔÄÜ²âÊÔ¹¹½¨ÖĞ¿ªÆô£©
-// #define ENABLE_GLOBAL_NEW_DELETE
+#ifdef _MEMORY_USE_TRACK_
+#include <unordered_map>
+#endif
 
 class GloMemPool {
 public:
-    // ³õÊ¼»¯/ÇåÀí
+    struct Stats {
+        size_t total_allocated = 0;
+        size_t peak_usage = 0;
+        size_t alloc_count = 0;
+        size_t dealloc_count = 0;
+        size_t current_blocks = 0;
+    };
+
     static bool initialize();
     static void finalize();
 
-    // Ô­Ê¼·ÖÅä½Ó¿Ú£¨¹©µ×²ãÊ¹ÓÃ£©
     static void* allocate(size_t size, const char* file = nullptr, int line = 0);
     static void deallocate(void* ptr);
 
-    // C++ °²È«¹¹Ôì½Ó¿Ú£¨ÍÆ¼öÉÏ²ãÊ¹ÓÃ£©
+    // æŠŠæ¨¡æ¿æ•´ä¸ªå®šä¹‰æ”¾åœ¨å¤´æ–‡ä»¶ä¸­ï¼ˆæ¨èï¼‰
     template<typename T, typename... Args>
-    static T* new_object(Args&&... args);
+    static T* new_object(Args&&... args) {
+        void* mem = allocate(sizeof(T));
+        if (!mem) return nullptr;
+        return new (mem) T(std::forward<Args>(args)...);
+    }
 
     template<typename T>
-    static void delete_object(T* ptr);
+    static void delete_object(T* ptr) {
+        if (ptr) {
+            ptr->~T();
+            deallocate(ptr);
+        }
+    }
 
-    // Í³¼Æ¹¦ÄÜ
-    struct Stats {
-        size_t total_allocated = 0;   // µ±Ç°ÒÑ·ÖÅä×ÜÁ¿
-        size_t peak_usage = 0;        // ·åÖµÄÚ´æÊ¹ÓÃ
-        size_t alloc_count = 0;       // ·ÖÅä´ÎÊı
-        size_t dealloc_count = 0;     // ÊÍ·Å´ÎÊı
-    };
     static Stats getStats();
-    static void logStats();
+
+    static bool hasPotentialLeak();
+    static size_t getOutstandingAllocations();
+    static size_t getCurrentBlocks();
+
+#ifdef _MEMORY_USE_TRACK_
+    static size_t getTrackedCount();
+#endif
 
 private:
     static ZRMemPool* s_pool;
     static Stats s_stats;
 
 #ifdef _MEMORY_USE_TRACK_
-    // µ÷ÊÔÄ£Ê½ÏÂÎ¬»¤·ÖÅä´óĞ¡Ó³Éä£¨ÓÃÓÚ×¼È·Í³¼ÆÊÍ·Å£©
     static std::unordered_map<void*, size_t> s_alloc_map;
 #endif
 
-    // ½ûÖ¹ÊµÀı»¯
     GloMemPool() = delete;
 };
 
-// È«¾Ö new/delete ÖØÔØ£¨¿ÉÑ¡ÆôÓÃ£©
-#ifdef ENABLE_GLOBAL_NEW_DELETE
-void* operator new(size_t size);
-void operator delete(void* ptr) noexcept;
-void* operator new[](size_t size);
-void operator delete[](void* ptr) noexcept;
-#endif
+// æ³¨æ„ï¼šæ­¤æ—¶ä¸éœ€è¦åœ¨ .cpp ä¸­å†™æ¨¡æ¿å®šä¹‰
+// ä¹Ÿä¸éœ€è¦æ˜¾å¼å®ä¾‹åŒ–ï¼ˆé™¤éä½ è¦å¼ºåˆ¶ç”Ÿæˆä»£ç ï¼‰

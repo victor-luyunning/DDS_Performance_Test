@@ -15,15 +15,15 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="ThroughPut.cpp">
+    <ClCompile Include="ResourceUtilization.cpp">
       <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="SysMetrics.h">
+      <Filter>头文件</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="ThroughPut.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="TestRoundResult.h">
+    <ClInclude Include="ResourceUtilization.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

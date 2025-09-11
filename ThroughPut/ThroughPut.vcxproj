@@ -102,13 +102,14 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;_ZRDDSCPPINTERFACE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ZRDDS_HOME)\include\ZRDDSCoreInterface;$(ZRDDS_HOME)\include\CPlusPlusInterface;E:\25-26-1\project\DDSManager;E:\25-26-1\project\Config;E:\25-26-1\project\testdata;E:\25-26-1\project\Logger;E:\25-26-1\project\GloMemPool;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ZRDDS_HOME)\include\ZRDDSCoreInterface;$(ZRDDS_HOME)\include\CPlusPlusInterface;..\DDSManager;..\Config;..\testdata;..\Logger;..\GloMemPool;..\ResourceUtilization;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ZRDDS_HOME)\lib;E:\25-26-1\project\testdata\x64\Debug</AdditionalLibraryDirectories>
-      <AdditionalDependencies>ZRDDSCppzd_VS2019.lib;Config.lib;DDSManager.lib;Logger.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ZRDDS_HOME)\lib;</AdditionalLibraryDirectories>
+      <AdditionalDependencies>ZRDDSCppzd_VS2019.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -129,7 +130,7 @@
     <ClCompile Include="ThroughPut.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="runEntityInterface.h" />
+    <ClInclude Include="TestRoundResult.h" />
     <ClInclude Include="ThroughPut.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

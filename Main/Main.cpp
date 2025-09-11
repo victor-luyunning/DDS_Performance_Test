@@ -1,6 +1,4 @@
 ﻿// Main.cpp
-
-// --- 1. 标准库头文件 ---
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -14,6 +12,14 @@
 
 // --- 项目头文件 ---
 #include "Main.h"
+#include "DDSManager.h"
+#include "Config.h"
+#include "Logger.h"
+#include "GloMemPool.h"
+#include "Throughput.h"
+#include "MetricsReport.h"
+#include "TestRoundResult.h"
+#include "ResourceUtilization.h"
 
 namespace {
     std::string json_file_path = GlobalConfig::DEFAULT_JSON_CONFIG_PATH;
@@ -24,7 +30,6 @@ namespace {
     bool loggingEnabled = true;
 }
 
-// --- 主函数 ---
 int main() {
     try {
         // ================= 初始化全局内存池 =================
@@ -44,71 +49,108 @@ int main() {
             return EXIT_FAILURE;
         }
 
-        Logger::getInstance().logAndPrint("\n=== 当前选中的配置 ===");
+        const ConfigData& base_config = config.getCurrentConfig();
+        const int total_rounds = base_config.m_loopNum;
+
+        Logger::getInstance().logAndPrint("\n=== 当前选中的配置模板 ===");
         std::ostringstream cfgStream;
         config.printCurrentConfig(cfgStream);
         Logger::getInstance().logAndPrint(cfgStream.str());
 
-        const ConfigData& cfg = config.getCurrentConfig();
+        if (total_rounds <= 0) {
+            Logger::getInstance().logAndPrint("[Error] m_loopNum 必须大于 0");
+            return EXIT_FAILURE;
+        }
 
-        // ================= 创建 DDSManager =================
-        std::unique_ptr<DDSManager> dds_manager = std::make_unique<DDSManager>(cfg, qos_file_path);
+        Logger::getInstance().logAndPrint("开始执行 " + std::to_string(total_rounds) + " 轮测试...");
 
-        // ================= 创建测试策略对象 =================
-        std::unique_ptr<runEntityInterface> tester = std::make_unique<Throughput>(*dds_manager);
+        // ================= 多轮测试主循环 =================
+        int total_result = EXIT_SUCCESS;
+        MetricsReport metricsReport;
 
-        // ================= 定义回调函数 =================
-        // 注意：这些回调在 initialize 时传入，用于通知 tester
-        OnDataReceivedCallback data_callback = [](const TestData& sample, const DDS::SampleInfo& info) {
-            // 可选：记录收到数据（通常 tester 内部统计即可）
-            // Logger::getInstance().logAndPrint("[Subscriber] 收到一条数据");
-            };
+        for (int round = 0; round < total_rounds; ++round) {
+            Logger::getInstance().logAndPrint(
+                "=== 第 " + std::to_string(round + 1) + "/" + std::to_string(total_rounds) +
+                " 轮测试开始 (m_activeLoop=" + std::to_string(round) + ") ==="
+            );
 
-        OnEndOfRoundCallback end_callback = []() {
-            // 通知 ThroughputTester 本轮结束
-            // 实际逻辑在 tester 内部通过 condition_variable 唤醒
-            // 这里可以空实现，因为 tester 已绑定状态
-            // 如果 tester 需要感知，可通过成员函数触发
-            };
+            // 创建本轮专用配置
+            ConfigData current_cfg = base_config;
+            current_cfg.m_activeLoop = round;
 
-        // ================= 初始化 DDSManager =================
-        if (cfg.m_isPositive) {
-            // Publisher：不需要数据回调
-            if (!dds_manager->initialize()) {
-                Logger::getInstance().logAndPrint("[Error] DDSManager 初始化失败（Publisher）");
-                return EXIT_FAILURE;
+            // 打印本轮实际配置
+            std::ostringstream roundCfgStream;
+            Config::printConfigToStream(current_cfg, roundCfgStream);
+            Logger::getInstance().logAndPrint(roundCfgStream.str());
+
+            // 创建 DDSManager
+            std::unique_ptr<DDSManager> dds_manager = std::make_unique<DDSManager>(current_cfg, qos_file_path);
+
+            // 定义结果回调
+            auto result_callback = [&metricsReport](const TestRoundResult& result) {
+                metricsReport.addResult(result);
+                };
+
+            // 创建测试器
+            Throughput tester(*dds_manager, result_callback);
+
+            // 数据与结束回调（仅订阅者需要）
+            OnDataReceivedCallback data_callback = [](const TestData& sample, const DDS::SampleInfo& info) {
+                // 可扩展：数据校验等
+                };
+
+            OnEndOfRoundCallback end_callback = []() {
+                // 已由 Throughput 内部处理
+                };
+
+            // 初始化
+            bool init_success = current_cfg.m_isPositive
+                ? dds_manager->initialize()
+                : dds_manager->initialize(data_callback, end_callback);
+
+            if (!init_success) {
+                Logger::getInstance().logAndPrint("[Error] DDSManager 初始化失败（第 " + std::to_string(round + 1) + " 轮）");
+                total_result = EXIT_FAILURE;
+                break;
             }
-        }
-        else {
-            // Subscriber：需要接收数据和结束通知
-            if (!dds_manager->initialize(data_callback, end_callback)) {
-                Logger::getInstance().logAndPrint("[Error] DDSManager 初始化失败（Subscriber）");
-                return EXIT_FAILURE;
+
+            // ========== Publisher: 等待订阅者重新连接（同步点）==========
+            if (current_cfg.m_isPositive && round > 0) {
+                Logger::getInstance().logAndPrint("等待订阅者重新上线以启动第 " + std::to_string(round + 1) + " 轮...");
+                if (!tester.waitForSubscriberReconnect(std::chrono::seconds(30))) {
+                    Logger::getInstance().logAndPrint("警告：未检测到订阅者重连，超时继续...");
+                }
             }
+
+            // ========== 运行单轮测试 ==========
+            int result = current_cfg.m_isPositive
+                ? tester.runPublisher(current_cfg)
+                : tester.runSubscriber(current_cfg);
+
+            if (result == 0) {
+                Logger::getInstance().logAndPrint("第 " + std::to_string(round + 1) + " 轮测试完成。");
+            }
+            else {
+                Logger::getInstance().logAndPrint("第 " + std::to_string(round + 1) + " 轮测试发生错误。");
+                total_result = EXIT_FAILURE;
+            }
+
+            // 清理资源
+            dds_manager->shutdown();
+            dds_manager.reset();
+
+            // 防止端口冲突
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
         }
 
-        Logger::getInstance().logAndPrint("DDSManager 初始化成功，开始运行测试...");
+        // ================= 测试结束 =================
+        Logger::getInstance().logAndPrint("\n--- 开始生成系统资源使用报告 ---");
+        metricsReport.generateSummary();
 
-        // ================= 启动测试 =================
-        int result = cfg.m_isPositive
-            ? tester->runPublisher(cfg)   // 发布者模式
-            : tester->runSubscriber(cfg); // 订阅者模式
-
-        if (result == 0) {
-            Logger::getInstance().logAndPrint("测试运行完成，结果正常。");
-        }
-        else {
-            Logger::getInstance().logAndPrint("测试运行中发生错误。");
-        }
-
-        // ================= 清理资源 =================
-        dds_manager->shutdown();
-        Logger::getInstance().logAndPrint("DDS 资源已清理");
-
+        ResourceUtilization::instance().shutdown();
         GloMemPool::finalize();
-        GloMemPool::logStats();  // 输出内存池统计
 
-        return result == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+        return total_result == EXIT_SUCCESS ? EXIT_SUCCESS : EXIT_FAILURE;
     }
     catch (const std::exception& e) {
         std::string errorMsg = "[Error] 异常: " + std::string(e.what());

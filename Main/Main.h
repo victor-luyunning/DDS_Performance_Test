@@ -10,18 +10,6 @@
 #define DDS_FALSE false
 #endif
 
-#include "DDSManager.h"
-#include "Config.h"
-#include "Logger.h"
-#include "GloMemPool.h"
-#include "ThroughPut.h"
-
-#include "TestData.h"
-#include "TestDataDataWriter.h"
-#include "TestDataTypeSupport.h"
-       
-#include "ZRSequence.h" 
-
 /**
  * @file Main.h
  * @brief 全局配置和常量定义。
@@ -41,7 +29,7 @@ namespace GlobalConfig {
      * 这个文件定义了所有可用的 QoS 策略，如可靠传输、历史深度等。
      * 路径可以是绝对路径或相对于可执行文件运行目录的相对路径。
      */
-    constexpr const char* DEFAULT_QOS_XML_PATH = "E:\\25-26-1\\project\\data\\zrdds_perf_test_qos.xml";
+    constexpr const char* DEFAULT_QOS_XML_PATH = "..\\..\\..\\data\\zrdds_perf_test_qos.xml";
 
     /**
      * @brief 默认的 RapidIO 门铃代理 (ZRDDSRIOProxy) 配置文件路径。
@@ -54,13 +42,13 @@ namespace GlobalConfig {
      * @brief 存放日志文件的默认目录。
      * 程序会尝试在此目录下创建日志文件。
      */
-    constexpr const char* LOG_DIRECTORY = "E:\\25-26-1\\project\\log";
+    constexpr const char* LOG_DIRECTORY = "..\\..\\..\\log";
 
     /**
      * @brief 默认的性能测试配置文件 (JSON) 的路径。
      * 这个文件包含了具体的测试用例，如主题名、角色、QoS名称等。
      */
-    constexpr const char* DEFAULT_JSON_CONFIG_PATH = "E:\\25-26-1\\project\\data\\zrdds_perf_config.json";
+    constexpr const char* DEFAULT_JSON_CONFIG_PATH = "..\\..\\..\\data\\zrdds_perf_config.json";
 
 
     // =========================
