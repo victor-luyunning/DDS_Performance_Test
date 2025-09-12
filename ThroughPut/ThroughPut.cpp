@@ -192,7 +192,7 @@ int Throughput::runPublisher(const ConfigData& config) {
     Logger::getInstance().logAndPrint(oss.str());  
 
     auto& resUtil = ResourceUtilization::instance();
-    resUtil.initialize(); // 初始化资源采集
+    resUtil.initialize(); // 初始化系统资源采集
     SysMetrics start_metrics = resUtil.collectCurrentMetrics();
 
     TestData sample;
@@ -288,4 +288,14 @@ int Throughput::runSubscriber(const ConfigData& config) {
     Logger::getInstance().logAndPrint(oss.str());
 
     return 0;
+}
+
+void Throughput::onDataReceived(const TestData& sample, const DDS::SampleInfo& info) {
+    ++receivedCount_;
+    // 可选：加日志或性能采样
+}
+
+void Throughput::onEndOfRound() {
+    roundFinished_.store(true);
+    cv_.notify_one();
 }

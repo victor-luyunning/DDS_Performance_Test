@@ -95,12 +95,12 @@ int main() {
             Throughput tester(*dds_manager, result_callback);
 
             // 数据与结束回调（仅订阅者需要）
-            OnDataReceivedCallback data_callback = [](const TestData& sample, const DDS::SampleInfo& info) {
-                // 可扩展：数据校验等
+            OnDataReceivedCallback data_callback = [&tester](const TestData& sample, const DDS::SampleInfo& info) {
+                tester.onDataReceived(sample, info);
                 };
 
-            OnEndOfRoundCallback end_callback = []() {
-                // 已由 Throughput 内部处理
+            OnEndOfRoundCallback end_callback = [&tester]() {
+                tester.onEndOfRound();
                 };
 
             // 初始化

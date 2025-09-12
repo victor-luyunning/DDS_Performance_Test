@@ -40,6 +40,9 @@ public:
      */
     bool waitForSubscriberReconnect(const std::chrono::seconds& timeout);
 
+    void onDataReceived(const TestData& sample, const DDS::SampleInfo& info);
+    void onEndOfRound();
+
 private:
     // 内部类：用于监听 DataWriter 状态变化
     class WriterListener;
