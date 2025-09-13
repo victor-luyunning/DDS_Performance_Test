@@ -10,7 +10,7 @@ struct ConfigData;  // Ç°ÏòÉùÃ÷
 class Config {
 public:
     explicit Config(const std::string& json_file_path);
-    ~Config();
+    ~Config() noexcept;
     Config(const Config&) = delete;
     Config& operator=(const Config&) = delete;
     Config(Config&&) = default;

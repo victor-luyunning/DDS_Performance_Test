@@ -1,4 +1,4 @@
-﻿// 注意：配置模块使用标准 std::string / std::vector
+﻿// Config.cpp
 // 不接入 GloMemPool，因为：
 // 1. 只在启动时加载一次，不影响性能测试
 // 2. 使用标准库更安全、易维护
@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <nlohmann/json.hpp>
+
 #include "Logger.h"
 
 using json = nlohmann::ordered_json;
@@ -38,6 +39,7 @@ public:
         loadConfig();
     }
 
+	// 加载 JSON 配置文件
     void loadConfig() {
         Logger::getInstance().logAndPrint("正在加载配置文件: " + json_file_path_);
 
@@ -67,6 +69,7 @@ public:
         current_ = configs_[0];
     }
 
+	// 解析单个配置项
     ConfigData parseConfigItem(const std::string& name, const nlohmann::json& item) {
         ConfigData cfg{};
         cfg.name = name;
@@ -121,12 +124,14 @@ public:
 
         cfg.m_loopNum = 0;
         cfg.m_activeLoop = 0;
-        cfg.m_resultPath = generateResultPath(cfg); 
+        cfg.m_resultPath = generateResultName(cfg); 
 
         return cfg;
     }
 
-    std::string generateResultPath(const ConfigData& c) const {
+	// 生成结果文件名
+    std::string generateResultName(const ConfigData& c) const {
+
         std::string typeName = c.m_typeName;
         std::replace(typeName.begin(), typeName.end(), ':', '-');
 
@@ -172,18 +177,15 @@ public:
     void applyFallbackToConfig(ConfigData& target, const ConfigData* source) {
         if (!target.has_m_minSize && source && source->has_m_minSize) {
             target.m_minSize = source->m_minSize;
-            target.has_m_minSize = true;
-            Logger::getInstance().logAndPrint("[Config] fallback: m_minSize 从配对配置复制");
+            target.has_m_minSize = true;           
         }
         if (!target.has_m_maxSize && source && source->has_m_maxSize) {
             target.m_maxSize = source->m_maxSize;
-            target.has_m_maxSize = true;
-            Logger::getInstance().logAndPrint("[Config] fallback: m_maxSize 从配对配置复制");
+            target.has_m_maxSize = true;           
         }
         if (!target.has_m_sendCount && source && source->has_m_sendCount) {
             target.m_sendCount = source->m_sendCount;
-            target.has_m_sendCount = true;
-            Logger::getInstance().logAndPrint("[Config] fallback: m_sendCount 从配对配置复制");
+            target.has_m_sendCount = true;           
         }
         if (!target.has_m_sendDelayCount && source && source->has_m_sendDelayCount) {
             target.m_sendDelayCount = source->m_sendDelayCount;
@@ -199,8 +201,7 @@ public:
         }
         if (!target.has_m_recvPrintGap && source && source->has_m_recvPrintGap) {
             target.m_recvPrintGap = source->m_recvPrintGap;
-            target.has_m_recvPrintGap = true;
-            Logger::getInstance().logAndPrint("[Config] fallback: m_recvPrintGap 从配对配置复制");
+            target.has_m_recvPrintGap = true;           
         }       
     }
 
@@ -218,8 +219,7 @@ public:
                 &cfg.m_recvPrintGap,
                 &cfg.m_sendDelay,
                 &cfg.m_sendDelayCount,
-                &cfg.m_sendPrintGap
-                // 添加其他你觉得可以决定 loopNum 的 vector
+                &cfg.m_sendPrintGap              
             };
 
             for (const auto* vec : candidates) {
@@ -251,12 +251,8 @@ public:
             if (vec.size() < static_cast<size_t>(cfg.m_loopNum)) {
                 int lastVal = vec.back();
                 vec.resize(cfg.m_loopNum, lastVal);
-                Logger::getInstance().logAndPrint(
-                    "[Config] 数组长度不足，已用最后一个值 " + std::to_string(lastVal) +
-                    " 填充至 " + std::to_string(cfg.m_loopNum) + " 个元素"
-                );
             }
-            };
+        };
 
         normalize(cfg.m_minSize);
         normalize(cfg.m_maxSize);
@@ -265,7 +261,6 @@ public:
         normalize(cfg.m_sendDelay);
         normalize(cfg.m_sendDelayCount);
         normalize(cfg.m_sendPrintGap);
-        // 其他需要的 vector...
     }
 
     // 打印当前配置（直接使用原始字段）

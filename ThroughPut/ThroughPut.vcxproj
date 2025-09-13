@@ -127,11 +127,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="ThroughPut.cpp" />
+    <ClCompile Include="ThroughPut_Bytes.cpp" />
+    <ClCompile Include="ThroughPut_ZeroCopyBytes.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="TestRoundResult.h" />
-    <ClInclude Include="ThroughPut.h" />
+    <ClInclude Include="ThroughPut_Bytes.h" />
+    <ClInclude Include="ThroughPut_ZeroCopyBytes.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -102,7 +102,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;_ZRDDSCPPINTERFACE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>..\include;..\Config;..\DDSManager;..\Logger;..\testdata;$(ZRDDS_HOME)\include\CPlusPlusInterface;$(ZRDDS_HOME)\include\ZRDDSCoreInterface;..\GloMemPool;..\ThroughPut;..\MetricsReport;..\ResourceUtilization;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\include;..\Config;..\DDSManager;..\Logger;$(ZRDDS_HOME)\include\CPlusPlusInterface;$(ZRDDS_HOME)\include\ZRDDSCoreInterface;..\GloMemPool;..\ThroughPut;..\MetricsReport;..\ResourceUtilization;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -127,13 +127,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\testdata\TestData.cpp" />
-    <ClCompile Include="..\testdata\TestDataTypeSupport.cpp" />
     <ClCompile Include="Main.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\testdata\TestData.h" />
-    <ClInclude Include="..\testdata\TestDataTypeSupport.h" />
     <ClInclude Include="Main.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

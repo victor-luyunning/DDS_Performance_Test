@@ -15,12 +15,18 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="DDSManager.h">
+    <ClInclude Include="DDSManager_Bytes.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="DDSManager_ZeroCopyBytes.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="DDSManager.cpp">
+    <ClCompile Include="DDSManager_Bytes.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="DDSManager_ZeroCopyBytes.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

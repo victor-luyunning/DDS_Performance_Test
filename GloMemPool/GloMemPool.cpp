@@ -9,13 +9,13 @@ std::unordered_map<void*, size_t> GloMemPool::s_alloc_map;
 
 bool GloMemPool::initialize() {
     ZRInitialGlobalMemPool();
-    s_pool = nullptr;
+    // s_pool = nullptr;// 默认全局池（可选）
     return true;
 }
 
 void GloMemPool::finalize() {
     ZRFinalizeGlobalMemPool();
-    s_pool = nullptr;
+    s_pool = nullptr;// 清空内存
 }
 
 void* GloMemPool::allocate(size_t size, const char* file, int line) {

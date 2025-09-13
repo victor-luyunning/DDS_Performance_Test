@@ -1,36 +1,38 @@
-﻿// DDSManager.cpp
-#include "DDSManager.h"
+﻿// DDSManager_Bytes.cpp
+#include "DDSManager_Bytes.h"
 #include "Logger.h"
 #include "GloMemPool.h"
-#include "TestDataDataReader.h"
-#include "TestDataDataWriter.h"
-#include "TestData.h"
-#include "TestDataTypeSupport.h"
+
+#include "ZRDDSDataReader.h"
+#include "ZRDDSTypeSupport.h"
+#include "ZRBuiltinTypesTypeSupport.h"
+#include "ZRDDSDataWriter.h"
 
 #include <iostream>
 #include <sstream>
 #include <random>
 
-// 内部 Listener 类
-class DDSManager::MyDataReaderListener
-    : public virtual DDS::SimpleDataReaderListener<TestData, TestDataSeq, DDS::ZRDDSDataReader<TestData, TestDataSeq>>
+
+// 内部 Listener 类 - 使用 Bytes 类型
+class DDSManager_Bytes::MyDataReaderListener
+    : public virtual DDS::SimpleDataReaderListener<DDS_Bytes, DDS_BytesSeq, DDS::ZRDDSDataReader<DDS_Bytes, DDS_BytesSeq>>
 {
 public:
     MyDataReaderListener(
-        OnDataReceivedCallback dataCb,
+        OnDataReceivedCallback_Bytes dataCb,
         OnEndOfRoundCallback endCb
     ) : onDataReceived_(std::move(dataCb)), onEndOfRound_(std::move(endCb)) {
     }
 
     virtual void on_process_sample(
-        DDS::DataReader* /*reader*/,
-        const TestData& sample,
+        DDS::DataReader*,
+        const DDS_Bytes& sample,
         const DDS::SampleInfo& info
     ) override {
         if (!info.valid_data) return;
 
         // 检查是否为结束包（首字节 255）
-        if (sample.value.length() > 0 && static_cast<unsigned char>(sample.value[0]) == 255) {
+        if (sample.value._length > 0 && static_cast<unsigned char>(sample.value[0]) == 255) {
             if (onEndOfRound_) {
                 onEndOfRound_();
             }
@@ -44,15 +46,15 @@ public:
     }
 
 private:
-    OnDataReceivedCallback onDataReceived_;
+    OnDataReceivedCallback_Bytes onDataReceived_;
     OnEndOfRoundCallback onEndOfRound_;
 };
 
 // 构造函数
-DDSManager::DDSManager(const ConfigData& config, const std::string& xml_qos_file_path)
+DDSManager_Bytes::DDSManager_Bytes(const ConfigData& config, const std::string& xml_qos_file_path)
     : domain_id_(config.m_domainId)
     , topic_name_(config.m_topicName)
-    , type_name_(config.m_typeName)
+    , type_name_(config.m_typeName)  
     , role_(config.m_isPositive ? "publisher" : "subscriber")
     , participant_factory_qos_name_(config.m_dpfQosName)
     , participant_qos_name_(config.m_dpQosName)
@@ -62,17 +64,17 @@ DDSManager::DDSManager(const ConfigData& config, const std::string& xml_qos_file
 {
 }
 
-DDSManager::~DDSManager() {
+DDSManager_Bytes::~DDSManager_Bytes() {
     if (is_initialized_) {
         shutdown();
     }
 }
 
-bool DDSManager::initialize(
-    OnDataReceivedCallback dataCallback,
+bool DDSManager_Bytes::initialize(
+    OnDataReceivedCallback_Bytes dataCallback,
     OnEndOfRoundCallback endCallback
 ) {
-    std::cout << "[DDSManager] Initializing DDS entities...\n";
+    std::cout << "[DDSManager_Bytes] Initializing DDS entities...\n";
 
     const char* qosFilePath = xml_qos_file_path_.c_str();
     const char* p_lib_name = "default_lib";
@@ -84,7 +86,7 @@ bool DDSManager::initialize(
     factory_ = DDS::DomainParticipantFactory::get_instance_w_profile(
         qosFilePath, p_lib_name, p_prof_name, pf_qos_name);
     if (!factory_) {
-        std::cerr << "[DDSManager] Failed to get DomainParticipantFactory.\n";
+        std::cerr << "[DDSManager_Bytes] Failed to get DomainParticipantFactory.\n";
         return false;
     }
 
@@ -92,20 +94,25 @@ bool DDSManager::initialize(
     participant_ = factory_->create_participant_with_qos_profile(
         domain_id_, p_lib_name, p_prof_name, p_qos_name, nullptr, DDS::STATUS_MASK_NONE);
     if (!participant_) {
-        std::cerr << "[DDSManager] Failed to create DomainParticipant.\n";
+        std::cerr << "[DDSManager_Bytes] Failed to create DomainParticipant.\n";
         return false;
     }
 
     // 注册类型
-    TestDataTypeSupport* type_support = TestDataTypeSupport::get_instance();
+    DDS::BytesTypeSupport* type_support = DDS::BytesTypeSupport::get_instance();
+    if (!type_support) {
+        std::cerr << "[DDSManager_Bytes] Failed to get DDSInnerTypeSupport instance.\n";
+        return false;
+    }
+
     const char* registered_type_name = type_support->get_type_name();
-    if (!registered_type_name) {
-        std::cerr << "[DDSManager] Type name is null.\n";
+    if (!registered_type_name || strlen(registered_type_name) == 0) {
+        std::cerr << "[DDSManager_Bytes] Type name is null or empty.\n";
         return false;
     }
 
     if (type_support->register_type(participant_, registered_type_name) != DDS::RETCODE_OK) {
-        std::cerr << "[DDSManager] Failed to register type '" << registered_type_name << "'.\n";
+        std::cerr << "[DDSManager_Bytes] Failed to register type '" << registered_type_name << "'.\n";
         return false;
     }
 
@@ -114,7 +121,7 @@ bool DDSManager::initialize(
         topic_name_.c_str(), registered_type_name,
         DDS::TOPIC_QOS_DEFAULT, nullptr, DDS::STATUS_MASK_NONE);
     if (!topic_) {
-        std::cerr << "[DDSManager] Failed to create Topic '" << topic_name_ << "'.\n";
+        std::cerr << "[DDSManager_Bytes] Failed to create Topic '" << topic_name_ << "'.\n";
         return false;
     }
 
@@ -125,15 +132,15 @@ bool DDSManager::initialize(
             "default_lib", "default_profile", data_writer_qos_name_.c_str(),
             nullptr, DDS::STATUS_MASK_NONE);
         if (!data_writer_) {
-            std::cerr << "[DDSManager] Failed to create DataWriter.\n";
+            std::cerr << "[DDSManager_Bytes] Failed to create DataWriter.\n";
             return false;
         }
-        std::cout << "[DDSManager] Created DataWriter.\n";
+        std::cout << "[DDSManager_Bytes] Created DataWriter.\n";
     }
     else if (role_ == "subscriber") {
         void* mem = GloMemPool::allocate(sizeof(MyDataReaderListener), __FILE__, __LINE__);
         if (!mem) {
-            std::cerr << "[DDSManager] Memory allocation failed for listener.\n";
+            std::cerr << "[DDSManager_Bytes] Memory allocation failed for listener.\n";
             return false;
         }
         listener_ = new (mem) MyDataReaderListener(std::move(dataCallback), std::move(endCallback));
@@ -146,22 +153,22 @@ bool DDSManager::initialize(
             listener_->~MyDataReaderListener();
             GloMemPool::deallocate(listener_);
             listener_ = nullptr;
-            std::cerr << "[DDSManager] Failed to create DataReader.\n";
+            std::cerr << "[DDSManager_Bytes] Failed to create DataReader.\n";
             return false;
         }
-        std::cout << "[DDSManager] Created DataReader with listener.\n";
+        std::cout << "[DDSManager_Bytes] Created DataReader with listener.\n";
     }
     else {
-        std::cerr << "[DDSManager] Invalid role: " << role_ << "\n";
+        std::cerr << "[DDSManager_Bytes] Invalid role: " << role_ << "\n";
         return false;
     }
 
     is_initialized_ = true;
-    std::cout << "[DDSManager] Initialization successful.\n";
+    std::cout << "[DDSManager_Bytes] Initialization successful.\n";
     return true;
 }
 
-void DDSManager::shutdown() {
+void DDSManager_Bytes::shutdown() {
     if (!factory_) return;
 
     if (listener_) {
@@ -180,11 +187,11 @@ void DDSManager::shutdown() {
     }
 
     is_initialized_ = false;
-    std::cout << "[DDSManager] Shutdown completed.\n";
+    std::cout << "[DDSManager_Bytes] Shutdown completed.\n";
 }
 
-// 内部辅助：准备测试数据
-bool DDSManager::prepareTestData(TestData& sample, int minSize, int maxSize) {
+// 准备测试数据
+bool DDSManager_Bytes::prepareBytesData(DDS_Bytes& sample, int minSize, int maxSize) {
     int actualSize = minSize;
     if (minSize != maxSize) {
         static std::random_device rd;
@@ -193,32 +200,56 @@ bool DDSManager::prepareTestData(TestData& sample, int minSize, int maxSize) {
         actualSize = dis(gen);
     }
 
-    if (!TestDataInitialize(&sample)) {
-        return false;
-    }
-
     DDS_ULong ul_size = static_cast<DDS_ULong>(actualSize);
-    sample.value._contiguousBuffer = static_cast<DDS_Octet*>(
-        GloMemPool::allocate(ul_size * sizeof(DDS_Octet), __FILE__, __LINE__)
-        );
 
-    if (!sample.value._contiguousBuffer) {
-        TestDataFinalize(&sample);
+    // 改进点：为序列化留余量
+    DDS_ULong reserve_extra = 16;
+    if (ul_size > 4096) reserve_extra = 64;
+    if (ul_size > 65536) reserve_extra = 256;
+    if (ul_size > 1048576) reserve_extra = 4096;
+
+    DDS_ULong alloc_size = ul_size + reserve_extra;
+
+    // 1. 分配内存池内存
+    DDS_Octet* buffer = static_cast<DDS_Octet*>(
+        GloMemPool::allocate(alloc_size * sizeof(DDS_Octet), __FILE__, __LINE__)
+        );
+    if (!buffer) {
+        return false; // 注意：此时 sample.value 尚未初始化，无需 finalize
+    }
+
+    // 2. 初始化 sequence -> 这是一个宏，展开后是 void 函数，不能赋值！
+    DDS_OctetSeq_initialize(&sample.value);
+
+    // 3. 租借内存 -> 返回 ZR_BOOLEAN (bool)
+    ZR_BOOLEAN loan_result = DDS_OctetSeq_loan_contiguous(&sample.value, buffer, ul_size, alloc_size);
+
+    if (!loan_result) { // 使用 !loan_result 判断失败
+        // 租借失败，需要手动释放 buffer
+        GloMemPool::deallocate(buffer);
+        // 并 finalize 已初始化但未成功租借的 sequence
+        DDS_OctetSeq_finalize(&sample.value);
         return false;
     }
 
-    sample.value._length = ul_size;
-    sample.value._maximum = ul_size;
-    sample.value._owned = DDS_TRUE;
-    sample.value._sequenceInit = DDS_INITIALIZE_NUMBER;
-
+    // 4. 填充数据
     for (DDS_ULong i = 0; i < ul_size; ++i) {
-        sample.value._contiguousBuffer[i] = static_cast<DDS::Octet>(i % 256);
+        sample.value[i] = static_cast<DDS::Octet>(i % 256);
     }
+
+    // 5. 更新 length，确保序列知道当前有效数据长度
+    // （虽然 loan_contiguous 可能已设置，但显式设置更安全）
+    sample.value._length = ul_size;
+
+    Logger::getInstance().logAndPrint(
+        "prepareBytesData: length=" + std::to_string(sample.value._length) +
+        " maximum=" + std::to_string(sample.value._maximum)
+    );
 
     return true;
 }
 
-void DDSManager::cleanupTestData(TestData& sample) {
-    TestDataFinalize(&sample);
+// 清理 Bytes 数据
+void DDSManager_Bytes::cleanupBytesData(DDS_Bytes& sample) {
+    DDS_OctetSeq_finalize(&sample.value);  
 }

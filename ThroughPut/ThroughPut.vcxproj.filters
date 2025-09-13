@@ -15,15 +15,21 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="ThroughPut.cpp">
+    <ClCompile Include="ThroughPut_Bytes.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="ThroughPut_ZeroCopyBytes.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="ThroughPut.h">
+    <ClInclude Include="ThroughPut_Bytes.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="TestRoundResult.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="ThroughPut_ZeroCopyBytes.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

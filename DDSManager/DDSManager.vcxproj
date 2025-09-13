@@ -104,7 +104,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;_ZRDDSCPPINTERFACE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>E:\25-26-1\project\testdata;$(ZRDDS_HOME)\include\CPlusPlusInterface;$(ZRDDS_HOME)\include\ZRDDSCoreInterface;E:\25-26-1\project\Config;E:\25-26-1\project\include;E:\25-26-1\project\Logger;E:\25-26-1\project\GloMemPool;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\Config;$(ZRDDS_HOME)\include\CPlusPlusInterface;$(ZRDDS_HOME)\include\ZRDDSCoreInterface;..\include;..\Logger;..\GloMemPool;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -131,12 +131,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="DDSManager.h" />
+    <ClInclude Include="DDSManager_Bytes.h" />
+    <ClInclude Include="DDSManager_ZeroCopyBytes.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="DDSManager.cpp">
+    <ClCompile Include="DDSManager_Bytes.cpp">
       <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">E:\ZRDDS\test\Extendtest1;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
+    <ClCompile Include="DDSManager_ZeroCopyBytes.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

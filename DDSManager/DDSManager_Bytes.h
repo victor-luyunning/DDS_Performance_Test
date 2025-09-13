@@ -1,4 +1,4 @@
-﻿// DDSManager.h
+﻿// DDSManager_Bytes.h
 #pragma once
 #include <string>
 #include <functional>
@@ -6,32 +6,22 @@
 #include "ConfigData.h"
 #include "DomainParticipant.h"
 #include "DomainParticipantFactory.h"
+#include "ZRBuiltinTypes.h"  
 
-#ifndef DDS_TRUE
-#define DDS_TRUE  true
-#endif
-
-#ifndef DDS_FALSE
-#define DDS_FALSE false
-#endif
-
-struct TestData;
-struct TestDataSeq;
-
-using OnDataReceivedCallback = std::function<void(const TestData&, const DDS::SampleInfo&)>;
+using OnDataReceivedCallback_Bytes = std::function<void(const DDS_Bytes&, const DDS::SampleInfo&)>;
 using OnEndOfRoundCallback = std::function<void()>;
 
-class DDSManager {
+class DDSManager_Bytes {
 public:
-    explicit DDSManager(const ConfigData& config, const std::string& xml_qos_file_path);
-    ~DDSManager();
+    explicit DDSManager_Bytes(const ConfigData& config, const std::string& xml_qos_file_path);
+    ~DDSManager_Bytes();
 
-    DDSManager(const DDSManager&) = delete;
-    DDSManager& operator=(const DDSManager&) = delete;
+    DDSManager_Bytes(const DDSManager_Bytes&) = delete;
+    DDSManager_Bytes& operator=(const DDSManager_Bytes&) = delete;
 
     // 初始化 DDS 实体，传入回调（供外部测试模块使用）
     bool initialize(
-        OnDataReceivedCallback dataCallback = nullptr,
+        OnDataReceivedCallback_Bytes dataCallback = nullptr,
         OnEndOfRoundCallback endCallback = nullptr
     );
 
@@ -43,9 +33,9 @@ public:
     DDS::DataReader* get_data_reader() const { return data_reader_; }
     bool is_initialized() const { return is_initialized_; }
 
-    // 辅助函数
-    bool prepareTestData(TestData& sample, int minSize, int maxSize);
-    void cleanupTestData(TestData& sample);
+    // 辅助函数：准备 Bytes 测试数据
+    bool prepareBytesData(DDS_Bytes& sample, int minSize, int maxSize);
+    void cleanupBytesData(DDS_Bytes& sample);
 
 private:
     std::string xml_qos_file_path_;

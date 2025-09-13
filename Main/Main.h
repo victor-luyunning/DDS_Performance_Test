@@ -25,6 +25,12 @@ namespace GlobalConfig {
     // =========================
 
     /**
+     * @brief 默认的性能测试配置文件 (JSON) 的路径。
+     * 这个文件包含了具体的测试用例，如主题名、角色、QoS名称等。
+     */
+    constexpr const char* DEFAULT_JSON_CONFIG_PATH = "..\\..\\..\\data\\zrdds_perf_config.json";
+
+    /**
      * @brief 默认的 ZRDDS QoS 配置文件 (XML) 的路径。
      * 这个文件定义了所有可用的 QoS 策略，如可靠传输、历史深度等。
      * 路径可以是绝对路径或相对于可执行文件运行目录的相对路径。
@@ -32,28 +38,10 @@ namespace GlobalConfig {
     constexpr const char* DEFAULT_QOS_XML_PATH = "..\\..\\..\\data\\zrdds_perf_test_qos.xml";
 
     /**
-     * @brief 默认的 RapidIO 门铃代理 (ZRDDSRIOProxy) 配置文件路径。
-     * 这个文件用于配置 RapidIO 通信的接收窗口。
-     * 如果不需要 RapidIO 通信，此配置可忽略。
-     */
-    constexpr const char* DEFAULT_RIO_PROXY_CONFIG_PATH = "E:\\25-26-1\\ZRDDS\\ZRDDS-2.4.4\\bin\\ZRDDSPerf\\rio_config.txt";
-
-    /**
      * @brief 存放日志文件的默认目录。
      * 程序会尝试在此目录下创建日志文件。
      */
     constexpr const char* LOG_DIRECTORY = "..\\..\\..\\log";
-
-    /**
-     * @brief 默认的性能测试配置文件 (JSON) 的路径。
-     * 这个文件包含了具体的测试用例，如主题名、角色、QoS名称等。
-     */
-    constexpr const char* DEFAULT_JSON_CONFIG_PATH = "..\\..\\..\\data\\zrdds_perf_config.json";
-
-
-    // =========================
-    // 其他常量
-    // =========================
 
     /**
      * @brief 日志文件名的前缀。
@@ -65,10 +53,10 @@ namespace GlobalConfig {
      */
     constexpr const char* LOG_FILE_SUFFIX = ".log";
 
-    /**
-     * @brief RapidIO 门铃代理程序的可执行文件名。
-     * 在启动程序前，可能需要检查此程序是否存在或自动启动它。
+    /*
+	 * @brief 默认的结果输出目录。
+     * 程序会尝试在此目录下创建结果文件。
      */
-    constexpr const char* RIO_PROXY_EXECUTABLE = "ZRDDSRIOProxy.exe";
+	constexpr const char* DEFAULT_RESULT_PATH = "..\\..\\..\\result";
 
 } // namespace GlobalConfig
