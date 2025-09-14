@@ -288,7 +288,7 @@ void DDSManager_Bytes::cleanupBytesData(DDS::Bytes& sample) {
     DDS_OctetSeq_finalize(&sample.value);
 }
 
-bool DDSManager_Bytes::prepareEndBytesData(DDS::Bytes& sample, int minSize, int maxSize) {
+bool DDSManager_Bytes::prepareEndBytesData(DDS::Bytes& sample, int minSize) {
     DDS_ULong ul_size = static_cast<DDS_ULong>(minSize);
     const size_t header_size = sizeof(PacketHeader);
     if (ul_size < header_size) {

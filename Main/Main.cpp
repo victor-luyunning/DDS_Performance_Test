@@ -126,7 +126,7 @@ int main() {
             // ------------------- 重新初始化 DDSManager -------------------
             bool init_success = false;
 
-            // 🔁 每轮都重新定义回调，避免 move 后失效
+            // 每轮都重新定义回调，避免 move 后失效
             if (is_zero_copy_mode) {
                 if (current_cfg.m_isPositive) {
                     init_success = zc_manager->initialize();

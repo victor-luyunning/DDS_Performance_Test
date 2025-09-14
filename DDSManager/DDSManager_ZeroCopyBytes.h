@@ -29,6 +29,8 @@ public:
 
     void shutdown();
 
+    bool ensureBufferSize(size_t user_data_size);
+
     // 提供实体访问接口
     DDS::DomainParticipant* get_participant() const { return participant_; }
     DDS::DataWriter* get_data_writer() const { return data_writer_; }
@@ -37,7 +39,8 @@ public:
 
     // 辅助函数：准备 ZeroCopyBytes 测试数据
     // 注意：与 Bytes 不同，这里我们假设缓冲区已预分配，只需设置 userLength 并填充数据
-    bool prepareZeroCopyData(DDS_ZeroCopyBytes& sample, int dataSize);
+    bool prepareZeroCopyData(DDS_ZeroCopyBytes& sample, int dataSize, uint32_t sequence);
+    bool prepareEndZeroCopyData(DDS_ZeroCopyBytes& sample);
 
 private:
     std::string xml_qos_file_path_;

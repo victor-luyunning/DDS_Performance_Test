@@ -211,7 +211,7 @@ int Throughput_Bytes::runPublisher(const ConfigData& config) {
     // === 发送结束包 ===
     // 发送结束包
     ddsManager_.cleanupBytesData(sample);
-    if (ddsManager_.prepareEndBytesData(sample, minSize, maxSize)) {
+    if (ddsManager_.prepareEndBytesData(sample, minSize)) {
         if (sample.value.length() > 0) {           
             Logger::getInstance().logAndPrint("发送结束包，长度=" + std::to_string(sample.value.length()));
         }
@@ -299,6 +299,9 @@ int Throughput_Bytes::runSubscriber(const ConfigData& config) {
     int received = receivedCount_.load();
     double duration_seconds = 0.0;
     double throughput_pps = 0.0;
+    double throughput_mbps = 0.0; 
+
+    int avg_packet_size = config.m_minSize[round_index];
 
     if (start_time.time_since_epoch().count() != 0 &&
         end_time.time_since_epoch().count() != 0 &&
@@ -306,12 +309,15 @@ int Throughput_Bytes::runSubscriber(const ConfigData& config) {
 
         auto duration = end_time - start_time;
         duration_seconds = std::chrono::duration<double>(duration).count();
-        throughput_pps = duration_seconds > 0 ? received / duration_seconds : 0.0;
-    }
 
-    // 可选：计算 MB/s
-    int avg_packet_size = config.m_minSize[round_index];
-    double throughput_mbps = (avg_packet_size * received * 8.0 / (1024 * 1024)) / std::max(duration_seconds, 1e-9);
+        throughput_pps = duration_seconds > 0 ? static_cast<double>(received) / duration_seconds : 0.0;
+
+        if (duration_seconds > 1e-9) {
+            throughput_mbps = (static_cast<double>(avg_packet_size) *
+                static_cast<double>(received) * 8.0 /
+                (1024.0 * 1024.0)) / duration_seconds;
+        }
+    }
 
     // === 计算丢包数和丢包率 ===
     int expected = config.m_sendCount[round_index];

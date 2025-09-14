@@ -11,6 +11,15 @@
 #include <iostream>
 #include <sstream>
 #include <random>
+#include <chrono>
+#include <cstring> // for memset
+
+// Packet Header 结构（保持与 Bytes 版一致）
+struct PacketHeader {
+    uint32_t sequence;     // 序列号
+    uint64_t timestamp;    // 发送时间（纳秒）
+    uint8_t  packet_type;  // 0=普通数据, 1=结束包
+};
 
 // 内部 Listener 类 - 使用 ZeroCopyBytes 类型
 class DDSManager_ZeroCopyBytes::MyDataReaderListener
@@ -32,19 +41,25 @@ public:
         const DDS_ZeroCopyBytes& sample,
         const DDS::SampleInfo& info
     ) override {
-        if (!info.valid_data) return;
+        if (!info.valid_data || sample.userLength < sizeof(PacketHeader)) {
+            Logger::getInstance().logAndPrint("[DDSManager_ZeroCopyBytes] Invalid or short packet.");
+            return;
+        }
 
-        // 检查是否为结束包（首字节 255）
-        // 注意：userBuffer 指向实际数据开始处
-        if (sample.userLength > 0 && static_cast<unsigned char>(sample.userBuffer[0]) == 255) {
-			Logger::getInstance().logAndPrint("[DDSManager_ZeroCopyBytes] Received end-of-round packet.");
+        const PacketHeader* hdr = reinterpret_cast<const PacketHeader*>(sample.userBuffer);
+
+        if (hdr->packet_type == 1) {
+            Logger::getInstance().logAndPrint(
+                "[DDSManager_ZeroCopyBytes] Received end-of-round packet | seq=" +
+                std::to_string(hdr->sequence) + " | ts=" + std::to_string(hdr->timestamp)
+            );
             if (onEndOfRound_) {
                 onEndOfRound_();
             }
             return;
         }
 
-        // 普通数据包
+        // 正常数据包
         if (onDataReceived_) {
             onDataReceived_(sample, info);
         }
@@ -66,7 +81,7 @@ DDSManager_ZeroCopyBytes::DDSManager_ZeroCopyBytes(const ConfigData& config, con
     , data_writer_qos_name_(config.m_writerQosName)
     , data_reader_qos_name_(config.m_readerQosName)
     , xml_qos_file_path_(xml_qos_file_path)
-    , max_possible_size_(/* 最大数据大小，这里用一个默认值 */ 2 * 1024 * 1024) // 2MB
+    , max_possible_size_(0)
     , global_buffer_(nullptr)
 {
 }
@@ -133,7 +148,6 @@ bool DDSManager_ZeroCopyBytes::initialize(
     }
 
     // ========== 零拷贝关键步骤：预分配全局缓冲区 ==========
-    // 这个缓冲区在整个生命周期内复用，避免频繁分配
     size_t totalBufferSize = max_possible_size_ + DEFAULT_HEADER_RESERVE;
     global_buffer_ = static_cast<char*>(GloMemPool::allocate(totalBufferSize, __FILE__, __LINE__));
     if (!global_buffer_) {
@@ -202,7 +216,6 @@ void DDSManager_ZeroCopyBytes::shutdown() {
         listener_ = nullptr;
     }
 
-    // ========== 释放预分配的全局缓冲区 ==========
     if (global_buffer_) {
         GloMemPool::deallocate(global_buffer_);
         global_buffer_ = nullptr;
@@ -221,13 +234,49 @@ void DDSManager_ZeroCopyBytes::shutdown() {
     std::cout << "[DDSManager_ZeroCopyBytes] Shutdown completed.\n";
 }
 
+// DDSManager_ZeroCopyBytes.cpp
+bool DDSManager_ZeroCopyBytes::ensureBufferSize(size_t user_data_size) {
+    const size_t required_total = user_data_size + DEFAULT_HEADER_RESERVE;
+
+    // 如果已有足够大的 buffer，无需重新分配
+    if (global_buffer_ && max_possible_size_ >= user_data_size) {
+        return true;
+    }
+
+    // 释放旧 buffer
+    if (global_buffer_) {
+        GloMemPool::deallocate(global_buffer_);
+        global_buffer_ = nullptr;
+    }
+
+    // 分配新 buffer
+    global_buffer_ = static_cast<char*>(GloMemPool::allocate(required_total, __FILE__, __LINE__));
+    if (!global_buffer_) {
+        std::cerr << "[DDSManager_ZeroCopyBytes] Failed to allocate buffer for size: " << required_total << "\n";
+        max_possible_size_ = 0;
+        return false;
+    }
+
+    max_possible_size_ = user_data_size;  // 更新记录的最大用户数据长度
+
+    Logger::getInstance().logAndPrint(
+        "ZeroCopy buffer allocated: total=" + std::to_string(required_total) +
+        ", userSize=" + std::to_string(user_data_size)
+    );
+
+    return true;
+}
+
 // 准备测试数据 (ZeroCopy 版本)
-// 注意：这个函数不再负责分配内存，而是复用预分配的 global_buffer_
-// 它只负责设置结构体字段和填充用户数据
-bool DDSManager_ZeroCopyBytes::prepareZeroCopyData(DDS_ZeroCopyBytes& sample, int dataSize) {
+bool DDSManager_ZeroCopyBytes::prepareZeroCopyData(DDS_ZeroCopyBytes& sample, int dataSize, uint32_t sequence) {
     if (!global_buffer_) {
         std::cerr << "[DDSManager_ZeroCopyBytes] Global buffer not allocated. Call initialize first!\n";
         return false;
+    }
+
+    const size_t headerSize = sizeof(PacketHeader);
+    if (static_cast<size_t>(dataSize) < headerSize) {
+        dataSize = headerSize; // 至少能放下 header
     }
 
     if (static_cast<size_t>(dataSize) > max_possible_size_) {
@@ -236,22 +285,68 @@ bool DDSManager_ZeroCopyBytes::prepareZeroCopyData(DDS_ZeroCopyBytes& sample, in
         return false;
     }
 
-    // 1. 设置结构体成员
+    // 设置结构体字段
     sample.totalLength = max_possible_size_ + DEFAULT_HEADER_RESERVE;
     sample.reservedLength = DEFAULT_HEADER_RESERVE;
-    sample.value = global_buffer_;                          // 整个缓冲区起始
-    sample.userBuffer = global_buffer_ + DEFAULT_HEADER_RESERVE; // 用户数据起始
-    sample.userLength = dataSize;                           // <<< 关键：设置要发送的实际长度
+    sample.value = global_buffer_;
+    sample.userBuffer = global_buffer_ + DEFAULT_HEADER_RESERVE;
+    sample.userLength = dataSize;
 
-    // 2. 填充用户数据
-    for (int i = 0; i < dataSize; ++i) {
-        sample.userBuffer[i] = static_cast<DDS::Octet>(i % 256);
+    // 填充 PacketHeader
+    PacketHeader* hdr = reinterpret_cast<PacketHeader*>(sample.userBuffer);
+    hdr->sequence = sequence;
+    hdr->timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+    hdr->packet_type = 0; // 普通数据包
+
+    // 填充 payload（可选）
+    for (size_t i = headerSize; i < static_cast<size_t>(dataSize); ++i) {
+        sample.userBuffer[i] = static_cast<DDS::Octet>((i + sequence) % 255);
     }
 
     Logger::getInstance().logAndPrint(
-        "prepareZeroCopyData: userLength=" + std::to_string(sample.userLength) +
-        " reservedLength=" + std::to_string(sample.reservedLength) +
+        "prepareZeroCopyData: seq=" + std::to_string(sequence) +
+        " userLength=" + std::to_string(sample.userLength) +
+        " reservedLength=" + std::to_string(DEFAULT_HEADER_RESERVE) +
         " totalLength=" + std::to_string(sample.totalLength)
+    );
+
+    return true;
+}
+
+// 准备结束包（统一格式）
+bool DDSManager_ZeroCopyBytes::prepareEndZeroCopyData(DDS_ZeroCopyBytes& sample) {
+    if (!global_buffer_) {
+        std::cerr << "[DDSManager_ZeroCopyBytes] Global buffer not allocated.\n";
+        return false;
+    }
+
+    const size_t headerSize = sizeof(PacketHeader);
+    const size_t dataSize = headerSize;
+
+    if (dataSize > max_possible_size_) {
+        std::cerr << "[DDSManager_ZeroCopyBytes] End packet size exceeds limit.\n";
+        return false;
+    }
+
+    sample.totalLength = max_possible_size_ + DEFAULT_HEADER_RESERVE;
+    sample.reservedLength = DEFAULT_HEADER_RESERVE;
+    sample.value = global_buffer_;
+    sample.userBuffer = global_buffer_ + DEFAULT_HEADER_RESERVE;
+    sample.userLength = dataSize;
+
+    PacketHeader* hdr = reinterpret_cast<PacketHeader*>(sample.userBuffer);
+    hdr->sequence = 0xFFFFFFFF;
+    hdr->timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+    hdr->packet_type = 1; // 结束包标记
+
+    memset(sample.userBuffer + headerSize, 0, dataSize - headerSize);
+
+    Logger::getInstance().logAndPrint(
+        "prepareEndZeroCopyData: length=" + std::to_string(sample.userLength)
     );
 
     return true;

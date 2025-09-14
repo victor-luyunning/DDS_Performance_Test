@@ -41,7 +41,7 @@ public:
         uint32_t sequence,
         uint64_t timestamp
     );
-    bool prepareEndBytesData(DDS_Bytes& sample, int minSize, int maxSize);
+    bool prepareEndBytesData(DDS_Bytes& sample, int minSize);
 
     // 清理 Bytes 数据
     void cleanupBytesData(DDS::Bytes& sample);

@@ -1,4 +1,4 @@
-// Throughput_ZeroCopyBytes.cpp
+ï»¿// Throughput_ZeroCopyBytes.cpp
 #include "Throughput_ZeroCopyBytes.h"
 
 #include "ZRDDSDataWriter.h"
@@ -10,11 +10,19 @@
 #include <chrono>
 #include <sstream>
 #include <iomanip>
+#include <mutex>
 
 using namespace DDS;
 
+// Packet Header ç»“æ„ï¼ˆä¿æŒä¸ Bytes ç‰ˆæœ¬ä¸€è‡´ï¼‰
+struct PacketHeader {
+    uint32_t sequence;     // åºåˆ—å·
+    // uint64_t timestamp; // å½“å‰æœªä½¿ç”¨ï¼Œå¯é€‰
+    uint8_t  packet_type;  // 0=æ•°æ®åŒ…, 1=ç»“æŸåŒ…
+};
+
 // ========================
-// ÄÚ²¿Àà£ºWriterListener (×¨ÓÃÓÚ ZeroCopy)
+// å†…éƒ¨ç±»ï¼šWriterListener (ä¸“ç”¨äº ZeroCopy)
 // ========================
 
 class Throughput_ZeroCopyBytes::WriterListener : public virtual DDS::DataWriterListener {
@@ -23,24 +31,10 @@ public:
         : reconnected_flag_(flag), mutex_(mtx), cond_var_(cv), last_current_count_(0) {
     }
 
-    void on_liveliness_lost(DDS::DataWriter*, const DDS::LivelinessLostStatus&) override {}
-    void on_offered_deadline_missed(DDS::DataWriter*, const DDS::OfferedDeadlineMissedStatus&) override {}
-    void on_offered_incompatible_qos(DDS::DataWriter*, const DDS::OfferedIncompatibleQosStatus&) override {}
-    void on_publication_matched(DDS::DataWriter*, const DDS::PublicationMatchedStatus&) override {}
-
-    /*void on_subscription_matched(DDS::DataWriter*, const DDS::SubscriptionMatchedStatus& status) override {
-        int32_t current = status.current_count;
-        int32_t previous = last_current_count_.load();
-
-        last_current_count_.store(current);
-
-        if (current > 0 && previous == 0) {
-            std::lock_guard<std::mutex> lock(mutex_);
-            reconnected_flag_.store(true);
-            cond_var_.notify_all();
-            Logger::getInstance().logAndPrint("Throughput_ZeroCopy: ¼ì²âµ½¶©ÔÄÕßÖØĞÂÉÏÏß");
-        }
-    }*/
+    void on_liveliness_lost(DataWriter*, const LivelinessLostStatus&) override {}
+    void on_offered_deadline_missed(DataWriter*, const OfferedDeadlineMissedStatus&) override {}
+    void on_offered_incompatible_qos(DataWriter*, const OfferedIncompatibleQosStatus&) override {}
+    void on_publication_matched(DataWriter*, const PublicationMatchedStatus&) override {}
 
 private:
     std::atomic<bool>& reconnected_flag_;
@@ -50,13 +44,15 @@ private:
 };
 
 // ========================
-// ¹¹Ôìº¯Êı & Îö¹¹
+// æ„é€ å‡½æ•° & ææ„
 // ========================
 
 Throughput_ZeroCopyBytes::Throughput_ZeroCopyBytes(DDSManager_ZeroCopyBytes& ddsManager, ResultCallback callback)
     : ddsManager_(ddsManager)
     , result_callback_(std::move(callback))
     , subscriber_reconnected_(false)
+    , receivedCount_(0)
+    , roundFinished_(false)
 {
     writer_listener_ = std::make_unique<WriterListener>(
         subscriber_reconnected_,
@@ -68,7 +64,7 @@ Throughput_ZeroCopyBytes::Throughput_ZeroCopyBytes(DDSManager_ZeroCopyBytes& dds
     if (writer) {
         ReturnCode_t ret = writer->set_listener(writer_listener_.get(), DDS::SUBSCRIPTION_MATCHED_STATUS);
         if (ret != DDS::RETCODE_OK) {
-            Logger::getInstance().logAndPrint("¾¯¸æ£ºÎŞ·¨Îª DataWriter ÉèÖÃ¼àÌıÆ÷");
+            Logger::getInstance().logAndPrint("è­¦å‘Šï¼šæ— æ³•ä¸º DataWriter è®¾ç½®ç›‘å¬å™¨");
         }
     }
 }
@@ -76,7 +72,7 @@ Throughput_ZeroCopyBytes::Throughput_ZeroCopyBytes(DDSManager_ZeroCopyBytes& dds
 Throughput_ZeroCopyBytes::~Throughput_ZeroCopyBytes() = default;
 
 // ========================
-// Í¬²½µÈ´ıº¯Êı
+// åŒæ­¥ç­‰å¾…å‡½æ•°
 // ========================
 
 bool Throughput_ZeroCopyBytes::waitForSubscriberReconnect(const std::chrono::seconds& timeout) {
@@ -131,31 +127,41 @@ bool Throughput_ZeroCopyBytes::waitForReaderMatch() {
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 }
-
 // ========================
-// runPublisher - ·¢ËÍÂß¼­£¨Áã¿½±´×¨ÓÃ£©
+// runPublisher - å‘é€é€»è¾‘ï¼ˆé›¶æ‹·è´ä¸“ç”¨ï¼‰
 // ========================
 
 int Throughput_ZeroCopyBytes::runPublisher(const ConfigData& config) {
     using WriterType = DDS::ZRDDSDataWriter<DDS::ZeroCopyBytes>;
     WriterType* writer = dynamic_cast<WriterType*>(ddsManager_.get_data_writer());
     if (!writer) {
-        Logger::getInstance().logAndPrint("Throughput_ZeroCopyBytes: DataWriter Îª¿Õ£¬ÎŞ·¨·¢ËÍ");
+        Logger::getInstance().logAndPrint("Throughput_ZeroCopyBytes: DataWriter ä¸ºç©ºï¼Œæ— æ³•å‘é€");
         return -1;
     }
 
     const int round_index = config.m_activeLoop;
-    const int dataSize = config.m_minSize[round_index];  // ÏÖÓĞ²âÊÔ minSize = maxSize£¬Ê¹ÓÃ minSize ×÷Îª¹Ì¶¨´óĞ¡£¨ZeroCopy Í¨³£¹Ì¶¨»º³åÇø£©
+    const int minSize = config.m_minSize[round_index];
+    const int maxSize = config.m_maxSize[round_index];
     const int sendCount = config.m_sendCount[round_index];
+    const int sendPrintGap = config.m_sendPrintGap[round_index];
+
+    // === ç¡®ä¿ Zero-Copy ç¼“å†²åŒºå¤§å°åŒ¹é…å½“å‰è½®æ¬¡æ•°æ®å°ºå¯¸ ===
+    if (!ddsManager_.ensureBufferSize(static_cast<size_t>(minSize))) {
+        Logger::getInstance().error(
+            "Throughput_ZeroCopyBytes: æ— æ³•ä¸ºå¤§å° " + std::to_string(minSize) +
+            " å­—èŠ‚åˆ†é… Zero-Copy ç¼“å†²åŒº"
+        );
+        return -1;
+    }
 
     if (!waitForWriterMatch()) {
-        Logger::getInstance().logAndPrint("Throughput_ZeroCopyBytes: µÈ´ı Subscriber Æ¥Åä³¬Ê±");
+        Logger::getInstance().logAndPrint("Throughput_ZeroCopyBytes: ç­‰å¾… Subscriber åŒ¹é…è¶…æ—¶");
         return -1;
     }
 
     std::ostringstream oss;
-    oss << "µÚ " << (round_index + 1) << " ÂÖÍÌÍÂ²âÊÔ | ·¢ËÍ: " << sendCount
-        << " Ìõ | Êı¾İ´óĞ¡: " << dataSize << " ×Ö½Ú (ZeroCopy)";
+    oss << "ç¬¬ " << (round_index + 1) << " è½®ååæµ‹è¯• | å‘é€: " << sendCount
+        << " æ¡ | æ•°æ®å¤§å°: [" << minSize << ", " << maxSize << "]";
     Logger::getInstance().logAndPrint(oss.str());
 
     auto& resUtil = ResourceUtilization::instance();
@@ -163,100 +169,190 @@ int Throughput_ZeroCopyBytes::runPublisher(const ConfigData& config) {
     SysMetrics start_metrics = resUtil.collectCurrentMetrics();
 
     DDS::ZeroCopyBytes sample;
-    if (!ddsManager_.prepareZeroCopyData(sample, dataSize)) {
-        Logger::getInstance().logAndPrint("Throughput_ZeroCopyBytes: ×¼±¸ ZeroCopy ²âÊÔÊı¾İÊ§°Ü");
+
+    // å‡†å¤‡ä¸»æ•°æ®æ ·æœ¬ï¼ˆä¼šä½¿ç”¨æ–°åˆ†é…çš„ global_bufferï¼‰
+    if (!ddsManager_.prepareZeroCopyData(sample, minSize, 0)) {
+        Logger::getInstance().logAndPrint("Throughput_ZeroCopyBytes: å‡†å¤‡ ZeroCopy æµ‹è¯•æ•°æ®å¤±è´¥");
         return -1;
     }
 
-    // === ·¢ËÍÖ÷Êı¾İ ===
+    char* userBuffer = sample.userBuffer;
+    if (!userBuffer) {
+        Logger::getInstance().error("Throughput_ZeroCopyBytes: userBuffer ä¸ºç©º");
+        return -1;
+    }
+
+    // === å‘é€ä¸»å¾ªç¯ ===
     for (int j = 0; j < sendCount; ++j) {
-        writer->write(sample, DDS_HANDLE_NIL_NATIVE);
+        // æ›´æ–°åºåˆ—å·
+        *reinterpret_cast<uint32_t*>(userBuffer) = static_cast<uint32_t>(j);
+
+        DDS::ReturnCode_t ret = writer->write(sample, DDS_HANDLE_NIL_NATIVE);
+        if (ret == DDS::RETCODE_OK) {
+            static int cnt = 0;
+            if (++cnt % sendPrintGap == 0) {
+                Logger::getInstance().logAndPrint("å·²å‘é€ " + std::to_string(cnt) + " æ¡");
+            }
+        }
+        else {
+            Logger::getInstance().error("Write failed: " + std::to_string(ret));
+        }
     }
 
-    // µÈ´ıÈ·ÈÏ
-    writer->wait_for_acknowledgments({ 10, 0 });
+    // ç­‰å¾…æ‰€æœ‰æ•°æ®è¢«ç¡®è®¤
+    DDS::Duration_t timeout = { 10, 0 };
+    writer->wait_for_acknowledgments(timeout);
 
-    // === ·¢ËÍ½áÊø°ü£¨±ê¼Ç±¾ÂÖ½áÊø£©===
-    if (sample.userLength > 0) {
-        sample.userBuffer[0] = 255;  // ½áÊø±êÖ¾
-    }
+    // === å‘é€ç»“æŸåŒ…ï¼ˆæ ‡è®°æœ¬è½®ç»“æŸï¼‰===
+    ddsManager_.prepareEndZeroCopyData(sample);
     for (int k = 0; k < 3; ++k) {
         writer->write(sample, DDS_HANDLE_NIL_NATIVE);
+        Logger::getInstance().logAndPrint("ç»“æŸåŒ…å‘é€ç¬¬ " + std::to_string(k + 1) + " æ¬¡");
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    // === ÊÕ¼¯ĞÔÄÜÊı¾İ ===
+    // æ”¶é›†èµ„æºä½¿ç”¨æƒ…å†µ
     SysMetrics end_metrics = resUtil.collectCurrentMetrics();
     if (result_callback_) {
         result_callback_(TestRoundResult{ round_index + 1, start_metrics, end_metrics });
     }
 
-    Logger::getInstance().logAndPrint("µÚ " + std::to_string(round_index + 1) + " ÂÖ·¢ËÍÍê³É (ZeroCopy)");
+    Logger::getInstance().logAndPrint("ç¬¬ " + std::to_string(round_index + 1) + " è½®å‘é€å®Œæˆ (ZeroCopy)");
     return 0;
 }
 
 // ========================
-// runSubscriber - ½ÓÊÕÂß¼­£¨Áã¿½±´×¨ÓÃ£©
+// runSubscriber - æ¥æ”¶é€»è¾‘ï¼ˆé›¶æ‹·è´ä¸“ç”¨ï¼‰
 // ========================
 
 int Throughput_ZeroCopyBytes::runSubscriber(const ConfigData& config) {
-    using ReaderType = DDS::ZRDDSDataReader<DDS::ZeroCopyBytes, DDS::ZeroCopyBytesSeq>;
-    ReaderType* reader = dynamic_cast<ReaderType*>(ddsManager_.get_data_reader());
-    if (!reader) {
-        Logger::getInstance().logAndPrint("Throughput_ZeroCopyBytes: DataReader Îª¿Õ£¬ÎŞ·¨½ÓÊÕ");
+    DDS::DataReader* raw_reader = ddsManager_.get_data_reader();
+    if (!raw_reader) {
+        Logger::getInstance().logAndPrint("Throughput_ZeroCopyBytes: DataReader ä¸ºç©º");
         return -1;
     }
+
+    Logger::getInstance().logAndPrint("DataReader å·²å°±ç»ªï¼Œç­‰å¾…æ•°æ®...");
 
     const int round_index = config.m_activeLoop;
     const int expected = config.m_sendCount[round_index];
+    const int avg_packet_size = config.m_minSize[round_index];  // å‡è®¾ min == max
 
-    if (!waitForReaderMatch()) {
-        Logger::getInstance().logAndPrint("Throughput_ZeroCopyBytes: µÈ´ı Publisher Æ¥Åä³¬Ê±");
+    // === åŠ¨æ€è°ƒæ•´æ¥æ”¶ç«¯ç¼“å†²åŒºå¤§å° ===
+    if (!ddsManager_.ensureBufferSize(static_cast<size_t>(avg_packet_size))) {
+        Logger::getInstance().error(
+            "Throughput_ZeroCopyBytes: Subscriber æ— æ³•åˆ†é…è¶³å¤Ÿå¤§çš„ Zero-Copy ç¼“å†²åŒº"
+        );
         return -1;
     }
 
-    Logger::getInstance().logAndPrint("µÚ " + std::to_string(round_index + 1) + " ÂÖ½ÓÊÕ¿ªÊ¼ (ZeroCopy)");
+    if (!waitForReaderMatch()) {
+        Logger::getInstance().logAndPrint("Throughput_ZeroCopyBytes: ç­‰å¾… Publisher åŒ¹é…è¶…æ—¶");
+        return -1;
+    }
+
+    Logger::getInstance().logAndPrint("ç¬¬ " + std::to_string(round_index + 1) + " è½®ååé‡æµ‹è¯•å¼€å§‹ (ZeroCopy)");
 
     auto& resUtil = ResourceUtilization::instance();
     resUtil.initialize();
     SysMetrics start_metrics = resUtil.collectCurrentMetrics();
 
+    // é‡ç½®çŠ¶æ€
     receivedCount_.store(0);
     roundFinished_.store(false);
 
-    waitForRoundEnd(); // ×èÈûÖ±µ½ÊÕµ½½áÊø°ü
+    {
+        std::lock_guard<std::mutex> lock(time_mutex_);
+        first_packet_time_ = std::chrono::steady_clock::time_point(); // zero åˆå§‹åŒ–
+        end_packet_time_ = std::chrono::steady_clock::time_point();
+    }
 
+    // === é˜»å¡ç­‰å¾…æµ‹è¯•ç»“æŸä¿¡å· ===
+    waitForRoundEnd();  // å†…éƒ¨è°ƒç”¨ cv_.wait(...) ç›´åˆ° onEndOfRound() è§¦å‘
+
+    // === è·å–è®¡æ—¶ç»“æœ ===
+    std::chrono::steady_clock::time_point start_time, end_time;
+    {
+        std::lock_guard<std::mutex> lock(time_mutex_);
+        start_time = first_packet_time_;
+        end_time = end_packet_time_;
+    }
+
+    // å¦‚æœæ²¡æ”¶åˆ°ä»»ä½•åŒ…
+    if (start_time.time_since_epoch().count() == 0) {
+        Logger::getInstance().logAndPrint("è­¦å‘Šï¼šæœªæ”¶åˆ°ä»»ä½•æœ‰æ•ˆæ•°æ®åŒ…");
+    }
+
+    // === è®¡ç®—æ€§èƒ½æŒ‡æ ‡ ===
+    int received = receivedCount_.load();
+    double duration_seconds = 0.0;
+    double throughput_pps = 0.0;
+    double throughput_mbps = 0.0;
+
+    if (start_time.time_since_epoch().count() != 0 &&
+        end_time.time_since_epoch().count() != 0 &&
+        end_time >= start_time) {
+
+        auto duration = end_time - start_time;
+        duration_seconds = std::chrono::duration<double>(duration).count();
+        throughput_pps = duration_seconds > 0 ? received / duration_seconds : 0.0;
+        throughput_mbps = (static_cast<double>(avg_packet_size) *
+            static_cast<double>(received) * 8.0 /
+            (1024.0 * 1024.0)) / std::max(duration_seconds, 1e-9);
+    }
+
+    // === ä¸¢åŒ…ç‡ ===
+    int lost = expected - received;
+    double lossRate = expected > 0 ? static_cast<double>(lost) / expected * 100.0 : 0.0;
+
+    // === ä¸ŠæŠ¥èµ„æºä½¿ç”¨ ===
     SysMetrics end_metrics = resUtil.collectCurrentMetrics();
     if (result_callback_) {
         result_callback_(TestRoundResult{ round_index + 1, start_metrics, end_metrics });
     }
 
-    int received = receivedCount_.load();
-    int lost = expected - received;
-    double lossRate = expected > 0 ? (double)lost / expected * 100.0 : 0.0;
-
+    // === è¾“å‡ºç»“æœ ===
     std::ostringstream oss;
-    oss << std::fixed << std::setprecision(6)
-        << "ÍÌÍÂ²âÊÔ (ZeroCopy) | µÚ " << (round_index + 1) << " ÂÖ | "
-        << "½ÓÊÕ: " << received << " | "
-        << "¶ª°ü: " << lost << " | "
-        << "¶ª°üÂÊ: " << lossRate << "%";
+    oss << std::fixed << std::setprecision(2)
+        << "ååé‡æµ‹è¯• (ZeroCopy) | ç¬¬ " << (round_index + 1) << " è½® | "
+        << "æ¥æ”¶: " << received << " åŒ… | "
+        << "ä¸¢åŒ…: " << lost << " åŒ… | "
+        << "ä¸¢åŒ…ç‡: " << lossRate << "% | "
+        << "è€—æ—¶: " << (duration_seconds * 1000.0) << " ms | "
+        << "åå: " << throughput_pps << " pps | "
+        << "å¸¦å®½: " << throughput_mbps << " Mbps";
+
     Logger::getInstance().logAndPrint(oss.str());
 
     return 0;
 }
 
 // ========================
-// »Øµ÷º¯ÊıÊµÏÖ
+// å›è°ƒå‡½æ•°å®ç°ï¼ˆä¾›å¤–éƒ¨ initialize æ—¶ä¼ å…¥ï¼‰
 // ========================
 
-void Throughput_ZeroCopyBytes::onDataReceived(const DDS::ZeroCopyBytes& /*sample*/, const DDS::SampleInfo& info) {
+void Throughput_ZeroCopyBytes::onDataReceived(const DDS_ZeroCopyBytes& /*sample*/, const DDS::SampleInfo& info) {
     if (!info.valid_data) return;
 
-    ++receivedCount_;
+    int64_t count = receivedCount_.fetch_add(1, std::memory_order_relaxed) + 1;
+
+    // è®°å½•ç¬¬ä¸€ä¸ªåŒ…çš„æ—¶é—´
+    if (count == 1) {
+        std::lock_guard<std::mutex> lock(time_mutex_);
+        first_packet_time_ = std::chrono::steady_clock::now();
+        Logger::getInstance().logAndPrint("æ”¶åˆ°ç¬¬ä¸€ä¸ªæ•°æ®åŒ…ï¼Œå¼€å§‹è®¡æ—¶...");
+    }
 }
 
 void Throughput_ZeroCopyBytes::onEndOfRound() {
+    // è®°å½•ç»“æŸæ—¶é—´
+    {
+        std::lock_guard<std::mutex> lock(time_mutex_);
+        end_packet_time_ = std::chrono::steady_clock::now();
+    }
+
     roundFinished_.store(true);
     cv_.notify_one();
+
+    Logger::getInstance().logAndPrint("[Throughput_ZeroCopyBytes] æµ‹è¯•è½®æ¬¡ç»“æŸä¿¡å·å·²è§¦å‘");
 }

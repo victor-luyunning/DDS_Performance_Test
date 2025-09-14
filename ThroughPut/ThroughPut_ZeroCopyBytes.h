@@ -53,4 +53,9 @@ private:
     void waitForRoundEnd();
     bool waitForWriterMatch();
     bool waitForReaderMatch();
+
+    std::chrono::steady_clock::time_point first_packet_time_;
+    std::chrono::steady_clock::time_point end_packet_time_; // 结束包收到时间
+
+    mutable std::mutex time_mutex_; // 保护 time_point 的修改（避免多线程竞争）
 };
