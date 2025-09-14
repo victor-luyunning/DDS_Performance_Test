@@ -11,11 +11,18 @@
 #include <iostream>
 #include <sstream>
 #include <random>
+#include <chrono>
 
+// Packet Header 结构（定义在 .cpp 内部即可）
+struct PacketHeader {
+    uint32_t sequence;     // 序列号
+    uint64_t timestamp;    // 发送时间（纳秒）
+    uint8_t  packet_type;
+};
 
 // 内部 Listener 类 - 使用 Bytes 类型
 class DDSManager_Bytes::MyDataReaderListener
-    : public virtual DDS::SimpleDataReaderListener<DDS_Bytes, DDS_BytesSeq, DDS::ZRDDSDataReader<DDS_Bytes, DDS_BytesSeq>>
+    : public virtual DDS::SimpleDataReaderListener<DDS::Bytes, DDS::BytesSeq, DDS::ZRDDSDataReader<DDS::Bytes, DDS::BytesSeq>>
 {
 public:
     MyDataReaderListener(
@@ -24,15 +31,31 @@ public:
     ) : onDataReceived_(std::move(dataCb)), onEndOfRound_(std::move(endCb)) {
     }
 
-    virtual void on_process_sample(
+    void on_process_sample(
         DDS::DataReader*,
-        const DDS_Bytes& sample,
+        const DDS::Bytes& sample,
         const DDS::SampleInfo& info
     ) override {
-        if (!info.valid_data) return;
+        if (!info.valid_data || sample.value.length() < sizeof(PacketHeader)) {
+            Logger::getInstance().logAndPrint("[DDSManager_Bytes] 收到无效或过短的数据包");
+            return;
+        }
 
-        // 检查是否为结束包（首字节 255）
-        if (sample.value._length > 0 && static_cast<unsigned char>(sample.value[0]) == 255) {
+        const uint8_t* buffer = sample.value.get_contiguous_buffer();
+        if (!buffer) {
+            Logger::getInstance().error("[DDSManager_Bytes] buffer 为空");
+            return;
+        }
+
+        const PacketHeader* hdr = reinterpret_cast<const PacketHeader*>(buffer);
+
+        // 判断是否为结束包
+        if (hdr->packet_type == 1) {
+            Logger::getInstance().logAndPrint(
+                "[DDSManager_Bytes] 收到结束包 | seq=" + std::to_string(hdr->sequence) +
+                " | ts=" + std::to_string(hdr->timestamp) +
+                " | length=" + std::to_string(sample.value.length())
+            );
             if (onEndOfRound_) {
                 onEndOfRound_();
             }
@@ -54,7 +77,7 @@ private:
 DDSManager_Bytes::DDSManager_Bytes(const ConfigData& config, const std::string& xml_qos_file_path)
     : domain_id_(config.m_domainId)
     , topic_name_(config.m_topicName)
-    , type_name_(config.m_typeName)  
+    , type_name_(config.m_typeName)
     , role_(config.m_isPositive ? "publisher" : "subscriber")
     , participant_factory_qos_name_(config.m_dpfQosName)
     , participant_qos_name_(config.m_dpQosName)
@@ -74,7 +97,7 @@ bool DDSManager_Bytes::initialize(
     OnDataReceivedCallback_Bytes dataCallback,
     OnEndOfRoundCallback endCallback
 ) {
-    std::cout << "[DDSManager_Bytes] Initializing DDS entities...\n";
+    Logger::getInstance().logAndPrint("[DDSManager_Bytes] 开始初始化 DDS 实体...");
 
     const char* qosFilePath = xml_qos_file_path_.c_str();
     const char* p_lib_name = "default_lib";
@@ -86,7 +109,7 @@ bool DDSManager_Bytes::initialize(
     factory_ = DDS::DomainParticipantFactory::get_instance_w_profile(
         qosFilePath, p_lib_name, p_prof_name, pf_qos_name);
     if (!factory_) {
-        std::cerr << "[DDSManager_Bytes] Failed to get DomainParticipantFactory.\n";
+        Logger::getInstance().error("[DDSManager_Bytes] 获取 DomainParticipantFactory 失败");
         return false;
     }
 
@@ -94,25 +117,27 @@ bool DDSManager_Bytes::initialize(
     participant_ = factory_->create_participant_with_qos_profile(
         domain_id_, p_lib_name, p_prof_name, p_qos_name, nullptr, DDS::STATUS_MASK_NONE);
     if (!participant_) {
-        std::cerr << "[DDSManager_Bytes] Failed to create DomainParticipant.\n";
+        Logger::getInstance().error("[DDSManager_Bytes] 创建 DomainParticipant 失败");
         return false;
     }
 
     // 注册类型
     DDS::BytesTypeSupport* type_support = DDS::BytesTypeSupport::get_instance();
     if (!type_support) {
-        std::cerr << "[DDSManager_Bytes] Failed to get DDSInnerTypeSupport instance.\n";
+        Logger::getInstance().error("[DDSManager_Bytes] 获取 BytesTypeSupport 实例失败");
         return false;
     }
 
     const char* registered_type_name = type_support->get_type_name();
     if (!registered_type_name || strlen(registered_type_name) == 0) {
-        std::cerr << "[DDSManager_Bytes] Type name is null or empty.\n";
+        Logger::getInstance().error("[DDSManager_Bytes] 类型名称为空");
         return false;
     }
 
     if (type_support->register_type(participant_, registered_type_name) != DDS::RETCODE_OK) {
-        std::cerr << "[DDSManager_Bytes] Failed to register type '" << registered_type_name << "'.\n";
+        std::ostringstream oss;
+        oss << "[DDSManager_Bytes] 注册类型 '" << registered_type_name << "' 失败";
+        Logger::getInstance().error(oss.str());
         return false;
     }
 
@@ -121,7 +146,9 @@ bool DDSManager_Bytes::initialize(
         topic_name_.c_str(), registered_type_name,
         DDS::TOPIC_QOS_DEFAULT, nullptr, DDS::STATUS_MASK_NONE);
     if (!topic_) {
-        std::cerr << "[DDSManager_Bytes] Failed to create Topic '" << topic_name_ << "'.\n";
+        std::ostringstream oss;
+        oss << "[DDSManager_Bytes] 创建 Topic '" << topic_name_ << "' 失败";
+        Logger::getInstance().error(oss.str());
         return false;
     }
 
@@ -132,15 +159,15 @@ bool DDSManager_Bytes::initialize(
             "default_lib", "default_profile", data_writer_qos_name_.c_str(),
             nullptr, DDS::STATUS_MASK_NONE);
         if (!data_writer_) {
-            std::cerr << "[DDSManager_Bytes] Failed to create DataWriter.\n";
+            Logger::getInstance().error("[DDSManager_Bytes] 创建 DataWriter 失败");
             return false;
         }
-        std::cout << "[DDSManager_Bytes] Created DataWriter.\n";
+        Logger::getInstance().logAndPrint("[DDSManager_Bytes] DataWriter 创建成功");
     }
     else if (role_ == "subscriber") {
         void* mem = GloMemPool::allocate(sizeof(MyDataReaderListener), __FILE__, __LINE__);
         if (!mem) {
-            std::cerr << "[DDSManager_Bytes] Memory allocation failed for listener.\n";
+            Logger::getInstance().error("[DDSManager_Bytes] 分配监听器内存失败");
             return false;
         }
         listener_ = new (mem) MyDataReaderListener(std::move(dataCallback), std::move(endCallback));
@@ -148,23 +175,23 @@ bool DDSManager_Bytes::initialize(
         data_reader_ = participant_->create_datareader_with_topic_and_qos_profile(
             topic_->get_name(), type_support,
             "default_lib", "default_profile", data_reader_qos_name_.c_str(),
-            listener_, DDS::DATA_AVAILABLE_STATUS);
+            listener_, DDS::STATUS_MASK_ALL);
         if (!data_reader_) {
             listener_->~MyDataReaderListener();
             GloMemPool::deallocate(listener_);
             listener_ = nullptr;
-            std::cerr << "[DDSManager_Bytes] Failed to create DataReader.\n";
+            Logger::getInstance().error("[DDSManager_Bytes] 创建 DataReader 失败");
             return false;
         }
-        std::cout << "[DDSManager_Bytes] Created DataReader with listener.\n";
+        Logger::getInstance().logAndPrint("[DDSManager_Bytes] DataReader 创建成功");
     }
     else {
-        std::cerr << "[DDSManager_Bytes] Invalid role: " << role_ << "\n";
+        Logger::getInstance().error("[DDSManager_Bytes] 无效角色: " + role_);
         return false;
     }
 
     is_initialized_ = true;
-    std::cout << "[DDSManager_Bytes] Initialization successful.\n";
+    Logger::getInstance().logAndPrint("[DDSManager_Bytes] 初始化成功");
     return true;
 }
 
@@ -172,7 +199,7 @@ void DDSManager_Bytes::shutdown() {
     if (!factory_) return;
 
     if (listener_) {
-        listener_->~MyDataReaderListener();
+        static_cast<MyDataReaderListener*>(listener_)->~MyDataReaderListener();
         GloMemPool::deallocate(listener_);
         listener_ = nullptr;
     }
@@ -187,11 +214,17 @@ void DDSManager_Bytes::shutdown() {
     }
 
     is_initialized_ = false;
-    std::cout << "[DDSManager_Bytes] Shutdown completed.\n";
+    Logger::getInstance().logAndPrint("[DDSManager_Bytes] 已关闭");
 }
 
-// 准备测试数据
-bool DDSManager_Bytes::prepareBytesData(DDS_Bytes& sample, int minSize, int maxSize) {
+// 准备测试数据（带序列号和时间戳）
+bool DDSManager_Bytes::prepareBytesData(
+    DDS::Bytes& sample,
+    int minSize,
+    int maxSize,
+    uint32_t sequence,
+    uint64_t timestamp
+) {
     int actualSize = minSize;
     if (minSize != maxSize) {
         static std::random_device rd;
@@ -200,56 +233,106 @@ bool DDSManager_Bytes::prepareBytesData(DDS_Bytes& sample, int minSize, int maxS
         actualSize = dis(gen);
     }
 
+    // 确保至少能放下整个 Header
+    const size_t header_size = sizeof(PacketHeader);
+    if (actualSize < static_cast<int>(header_size)) {
+        actualSize = header_size;
+    }
+
     DDS_ULong ul_size = static_cast<DDS_ULong>(actualSize);
-
-    // 改进点：为序列化留余量
-    DDS_ULong reserve_extra = 16;
-    if (ul_size > 4096) reserve_extra = 64;
-    if (ul_size > 65536) reserve_extra = 256;
-    if (ul_size > 1048576) reserve_extra = 4096;
-
+    DDS_ULong reserve_extra = (ul_size > 65536) ? 256 : (ul_size > 4096) ? 64 : 16;
     DDS_ULong alloc_size = ul_size + reserve_extra;
 
-    // 1. 分配内存池内存
     DDS_Octet* buffer = static_cast<DDS_Octet*>(
         GloMemPool::allocate(alloc_size * sizeof(DDS_Octet), __FILE__, __LINE__)
         );
     if (!buffer) {
-        return false; // 注意：此时 sample.value 尚未初始化，无需 finalize
-    }
-
-    // 2. 初始化 sequence -> 这是一个宏，展开后是 void 函数，不能赋值！
-    DDS_OctetSeq_initialize(&sample.value);
-
-    // 3. 租借内存 -> 返回 ZR_BOOLEAN (bool)
-    ZR_BOOLEAN loan_result = DDS_OctetSeq_loan_contiguous(&sample.value, buffer, ul_size, alloc_size);
-
-    if (!loan_result) { // 使用 !loan_result 判断失败
-        // 租借失败，需要手动释放 buffer
-        GloMemPool::deallocate(buffer);
-        // 并 finalize 已初始化但未成功租借的 sequence
-        DDS_OctetSeq_finalize(&sample.value);
+        Logger::getInstance().error("[DDSManager_Bytes] 内存分配失败，大小: " + std::to_string(alloc_size));
         return false;
     }
 
-    // 4. 填充数据
-    for (DDS_ULong i = 0; i < ul_size; ++i) {
-        sample.value[i] = static_cast<DDS::Octet>(i % 256);
+    DDS_OctetSeq_initialize(&sample.value);
+    ZR_BOOLEAN loan_result = DDS_OctetSeq_loan_contiguous(&sample.value, buffer, ul_size, alloc_size);
+    if (!loan_result) {
+        GloMemPool::deallocate(buffer);
+        DDS_OctetSeq_finalize(&sample.value);
+        Logger::getInstance().error("[DDSManager_Bytes] 租借内存失败");
+        return false;
     }
 
-    // 5. 更新 length，确保序列知道当前有效数据长度
-    // （虽然 loan_contiguous 可能已设置，但显式设置更安全）
+    // === 填充 PacketHeader ===
+    PacketHeader* hdr = reinterpret_cast<PacketHeader*>(buffer);
+    hdr->sequence = sequence;
+    hdr->timestamp = timestamp;
+    hdr->packet_type = 0;  // 正常数据包
+
+    // === 填充 payload（可选）===
+    for (DDS_ULong i = header_size; i < ul_size; ++i) {
+        sample.value[i] = static_cast<DDS::Octet>((i + sequence) % 255);
+    }
+
     sample.value._length = ul_size;
 
-    Logger::getInstance().logAndPrint(
-        "prepareBytesData: length=" + std::to_string(sample.value._length) +
-        " maximum=" + std::to_string(sample.value._maximum)
-    );
+    std::ostringstream oss;
+    oss << "prepareBytesData: seq=" << sequence
+        << " ts=" << timestamp
+        << " type=" << static_cast<int>(hdr->packet_type)
+        << " length=" << ul_size;
+    Logger::getInstance().logAndPrint(oss.str());
 
     return true;
 }
 
 // 清理 Bytes 数据
-void DDSManager_Bytes::cleanupBytesData(DDS_Bytes& sample) {
-    DDS_OctetSeq_finalize(&sample.value);  
+void DDSManager_Bytes::cleanupBytesData(DDS::Bytes& sample) {
+    DDS_OctetSeq_finalize(&sample.value);
+}
+
+bool DDSManager_Bytes::prepareEndBytesData(DDS::Bytes& sample, int minSize, int maxSize) {
+    DDS_ULong ul_size = static_cast<DDS_ULong>(minSize);
+    const size_t header_size = sizeof(PacketHeader);
+    if (ul_size < header_size) {
+        ul_size = header_size;
+    }
+
+    const DDS_ULong reserve_extra = 16;
+    DDS_ULong alloc_size = ul_size + reserve_extra;
+
+    DDS_Octet* buffer = static_cast<DDS_Octet*>(
+        GloMemPool::allocate(alloc_size * sizeof(DDS_Octet), __FILE__, __LINE__)
+        );
+    if (!buffer) {
+        Logger::getInstance().error("[DDSManager_Bytes] 结束包内存分配失败，大小: " + std::to_string(alloc_size));
+        return false;
+    }
+
+    DDS_OctetSeq_initialize(&sample.value);
+    ZR_BOOLEAN loan_result = DDS_OctetSeq_loan_contiguous(&sample.value, buffer, ul_size, alloc_size);
+    if (!loan_result) {
+        GloMemPool::deallocate(buffer);
+        DDS_OctetSeq_finalize(&sample.value);
+        Logger::getInstance().error("[DDSManager_Bytes] 结束包租借内存失败");
+        return false;
+    }
+
+    // === 构造结束包 Header ===
+    PacketHeader* hdr = reinterpret_cast<PacketHeader*>(buffer);
+    hdr->sequence = 0xFFFFFFFF;           // 可选标记
+    hdr->timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()
+    ).count();
+    hdr->packet_type = 1;                 // 关键：标识这是结束包！
+
+    // 剩余部分填充 0
+    for (DDS_ULong i = header_size; i < ul_size; ++i) {
+        sample.value[i] = 0;
+    }
+    sample.value._length = ul_size;
+
+    Logger::getInstance().logAndPrint(
+        "prepareEndBytesData: length=" + std::to_string(sample.value._length) +
+        ", type=" + std::to_string(hdr->packet_type)
+    );
+
+    return true;
 }

@@ -145,7 +145,7 @@ int Throughput_ZeroCopyBytes::runPublisher(const ConfigData& config) {
     }
 
     const int round_index = config.m_activeLoop;
-    const int dataSize = config.m_minSize[round_index];  // 假设使用 minSize 作为固定大小（ZeroCopy 通常固定缓冲区）
+    const int dataSize = config.m_minSize[round_index];  // 现有测试 minSize = maxSize，使用 minSize 作为固定大小（ZeroCopy 通常固定缓冲区）
     const int sendCount = config.m_sendCount[round_index];
 
     if (!waitForWriterMatch()) {

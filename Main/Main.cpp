@@ -67,10 +67,9 @@ int main() {
 
         Logger::getInstance().logAndPrint("开始执行 " + std::to_string(total_rounds) + " 轮测试...");
 
-        // ==================== 🔧 根据配置一次性决定使用哪种传输模式 ====================
+        // ==================== 根据配置决定传输模式 ====================
         bool is_zero_copy_mode = (base_config.m_typeName == "DDS::ZeroCopyBytes");
 
-        // 声明两种可能的管理器和吞吐控制器（只初始化其中一个）
         std::unique_ptr<DDSManager_Bytes> bytes_manager;
         std::unique_ptr<DDSManager_ZeroCopyBytes> zc_manager;
 
@@ -79,44 +78,7 @@ int main() {
 
         MetricsReport metricsReport;
 
-        // 公共的结束回调
-        std::function<void()> end_callback;
-
-        if (is_zero_copy_mode) {
-            Logger::getInstance().logAndPrint("✅ 启动 ZeroCopyBytes 模式");
-
-            // 创建 Manager
-            zc_manager = std::make_unique<DDSManager_ZeroCopyBytes>(base_config, qos_file_path);
-
-            // 创建 Throughput 实例
-            throughput_zc = std::make_unique<Throughput_ZeroCopyBytes>(*zc_manager,
-                [&metricsReport](const TestRoundResult& result) {
-                    metricsReport.addResult(result);
-                }
-            );
-
-            // 设置通用 end 回调
-            end_callback = [&throughput_zc]() { throughput_zc->onEndOfRound(); };
-
-        }
-        else {
-            Logger::getInstance().logAndPrint("✅ 启动 Bytes 模式");
-
-            // 创建 Manager
-            bytes_manager = std::make_unique<DDSManager_Bytes>(base_config, qos_file_path);
-
-            // 创建 Throughput 实例
-            throughput_bytes = std::make_unique<Throughput_Bytes>(*bytes_manager,
-                [&metricsReport](const TestRoundResult& result) {
-                    metricsReport.addResult(result);
-                }
-            );
-
-            // 设置通用 end 回调
-            end_callback = [&throughput_bytes]() { throughput_bytes->onEndOfRound(); };
-        }
-
-        // ==================== 🔁 多轮测试主循环 ====================
+        // ========== 主循环：多轮测试 ==========
         int total_result = EXIT_SUCCESS;
 
         for (int round = 0; round < total_rounds; ++round) {
@@ -125,27 +87,54 @@ int main() {
                 " 轮测试开始 (m_activeLoop=" + std::to_string(round) + ") ==="
             );
 
-            // 创建本轮专用配置副本
+            // 创建本轮配置副本
             ConfigData current_cfg = base_config;
             current_cfg.m_activeLoop = round;
 
-            // 打印本轮实际参数
+            // 打印本轮参数
             std::ostringstream roundCfgStream;
             Config::printConfigToStream(current_cfg, roundCfgStream);
             Logger::getInstance().logAndPrint(roundCfgStream.str());
 
-            // ========== 初始化 DDS 实体 ==========
+            // ------------------- 创建 Throughput 实例（如果尚未创建）-------------------
+            // 注意：只在第一轮创建，后续复用
+            if (round == 0) {
+                if (is_zero_copy_mode) {
+                    Logger::getInstance().logAndPrint("启动 ZeroCopyBytes 模式");
+
+                    zc_manager = std::make_unique<DDSManager_ZeroCopyBytes>(current_cfg, qos_file_path);
+
+                    throughput_zc = std::make_unique<Throughput_ZeroCopyBytes>(*zc_manager,
+                        [&metricsReport](const TestRoundResult& result) {
+                            metricsReport.addResult(result);
+                        }
+                    );
+                }
+                else {
+                    Logger::getInstance().logAndPrint("启动 Bytes 模式");
+
+                    bytes_manager = std::make_unique<DDSManager_Bytes>(current_cfg, qos_file_path);
+
+                    throughput_bytes = std::make_unique<Throughput_Bytes>(*bytes_manager,
+                        [&metricsReport](const TestRoundResult& result) {
+                            metricsReport.addResult(result);
+                        }
+                    );
+                }
+            }
+
+            // ------------------- 重新初始化 DDSManager -------------------
             bool init_success = false;
 
+            // 🔁 每轮都重新定义回调，避免 move 后失效
             if (is_zero_copy_mode) {
                 if (current_cfg.m_isPositive) {
-                    // Publisher 不需要回调
                     init_success = zc_manager->initialize();
                 }
                 else {
-                    // Subscriber 需要绑定数据接收回调
+                    auto end_callback = [&]() { throughput_zc->onEndOfRound(); };
                     init_success = zc_manager->initialize(
-                        [&throughput_zc](const DDS::ZeroCopyBytes& sample, const DDS::SampleInfo& info) {
+                        [&](const DDS::ZeroCopyBytes& sample, const DDS::SampleInfo& info) {
                             throughput_zc->onDataReceived(sample, info);
                         },
                         end_callback
@@ -157,8 +146,9 @@ int main() {
                     init_success = bytes_manager->initialize();
                 }
                 else {
+                    auto end_callback = [&]() { throughput_bytes->onEndOfRound(); };
                     init_success = bytes_manager->initialize(
-                        [&throughput_bytes](const DDS::Bytes& sample, const DDS::SampleInfo& info) {
+                        [&](const DDS::Bytes& sample, const DDS::SampleInfo& info) {
                             throughput_bytes->onDataReceived(sample, info);
                         },
                         end_callback
@@ -172,7 +162,7 @@ int main() {
                 break;
             }
 
-            // ========== Publisher: 等待订阅者重新连接（从第二轮开始）==========
+            // ------------------- Publisher: 等待 Subscriber 重连（从第二轮开始）-------------------
             if (current_cfg.m_isPositive && round > 0) {
                 Logger::getInstance().logAndPrint("等待订阅者重新上线以启动第 " + std::to_string(round + 1) + " 轮...");
 
@@ -189,16 +179,14 @@ int main() {
                 }
             }
 
-            // ========== 运行单轮测试 ==========
+            // ------------------- 运行单轮测试 -------------------
             int result = 0;
             if (current_cfg.m_isPositive) {
-                // 发布者任务
                 result = is_zero_copy_mode
                     ? throughput_zc->runPublisher(current_cfg)
                     : throughput_bytes->runPublisher(current_cfg);
             }
             else {
-                // 订阅者任务
                 result = is_zero_copy_mode
                     ? throughput_zc->runSubscriber(current_cfg)
                     : throughput_bytes->runSubscriber(current_cfg);
@@ -212,7 +200,7 @@ int main() {
                 total_result = EXIT_FAILURE;
             }
 
-            // ========== 清理本轮回合资源 ==========
+            // ------------------- 清理本轮回合资源 -------------------
             if (is_zero_copy_mode) {
                 zc_manager->shutdown();
             }
@@ -224,7 +212,7 @@ int main() {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
 
-        // ==================== 📊 测试结束，生成报告 ====================
+        // ==================== 测试结束，生成报告 ====================
         Logger::getInstance().logAndPrint("\n--- 开始生成系统资源使用报告 ---");
         metricsReport.generateSummary();
 

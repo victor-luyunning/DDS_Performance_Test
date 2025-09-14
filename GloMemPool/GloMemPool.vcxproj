@@ -108,7 +108,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ZRDDS_HOME)\lib;E:\25-26-1\project\testdata\x64\Debug</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ZRDDS_HOME)\lib;..\testdata\x64\Debug</AdditionalLibraryDirectories>
       <AdditionalDependencies>ZRDDSCppzd_VS2019.lib;Logger.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>

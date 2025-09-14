@@ -48,4 +48,9 @@ private:
     void waitForRoundEnd();
     bool waitForWriterMatch();
     bool waitForReaderMatch();
+
+    std::chrono::steady_clock::time_point first_packet_time_;
+    std::chrono::steady_clock::time_point end_packet_time_;
+
+    std::mutex time_mutex_;  // 多线程安全
 };

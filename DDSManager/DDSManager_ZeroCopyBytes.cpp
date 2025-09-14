@@ -37,6 +37,7 @@ public:
         // 检查是否为结束包（首字节 255）
         // 注意：userBuffer 指向实际数据开始处
         if (sample.userLength > 0 && static_cast<unsigned char>(sample.userBuffer[0]) == 255) {
+			Logger::getInstance().logAndPrint("[DDSManager_ZeroCopyBytes] Received end-of-round packet.");
             if (onEndOfRound_) {
                 onEndOfRound_();
             }
@@ -65,7 +66,7 @@ DDSManager_ZeroCopyBytes::DDSManager_ZeroCopyBytes(const ConfigData& config, con
     , data_writer_qos_name_(config.m_writerQosName)
     , data_reader_qos_name_(config.m_readerQosName)
     , xml_qos_file_path_(xml_qos_file_path)
-    , max_possible_size_(/* 你需要从配置中获取最大数据大小，这里用一个默认值 */ 64 * 1024) // 64KB
+    , max_possible_size_(/* 最大数据大小，这里用一个默认值 */ 2 * 1024 * 1024) // 2MB
     , global_buffer_(nullptr)
 {
 }
