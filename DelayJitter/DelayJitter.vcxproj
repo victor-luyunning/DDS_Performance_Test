@@ -115,7 +115,7 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>ZRDDSCppzd_VS2019.lib;Config.lib;DDSManager.lib;Logger.lib;Ws2_32.lib;ThroughPut.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(ZRDDS_HOME)\lib</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ZRDDS_HOME)\lib;..\testdata\x64\Debug</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">

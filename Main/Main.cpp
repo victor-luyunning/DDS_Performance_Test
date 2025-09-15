@@ -134,7 +134,6 @@ int main() {
                             }
                         );
                     }
-                    // TODO: if (is_latency_test) latency_test_zc = ...
                 }
                 else {
                     bytes_manager = std::make_unique<DDSManager_Bytes>(current_cfg, qos_file_path);
@@ -199,24 +198,43 @@ int main() {
                 }
             }
             else if (is_latency_test) {
-                // 注意：LatencyTest_Bytes 内部会在 runXXX 中调用 initialize_latency()
-                // 所以这里不需要提前初始化
-                // 我们只做一次 setup
-                if (round == 0) {
-                    if (is_zero_copy_mode) {
-                        // 假设有 LatencyTest_ZeroCopyBytes
-                        // latency_test_zc = std::make_unique<LatencyTest_ZeroCopyBytes>(*zc_manager, ...);
+                // 每一轮都必须重新初始化 DDSManager（时延模式）
+                if (is_zero_copy_mode) {
+                    // TODO: 支持 ZeroCopy 模式
+                    init_success = false;
+                }
+                else {
+                    if (current_cfg.m_isPositive) {
+                        // Initiator: 发送 Ping，接收 Pong
+                        init_success = bytes_manager->initialize_latency(
+                            nullptr, // 不接收 Ping
+                            [&latency_test_bytes](const DDS::Bytes& s, const DDS::SampleInfo& i) {
+                                latency_test_bytes->handlePongReceived(s, i); // 处理回包
+                            },
+                            nullptr // 不处理结束包
+                        );
                     }
                     else {
-                        latency_test_bytes = std::make_unique<LatencyTest_Bytes>(
-                            *bytes_manager,
-                            [&metricsReport](const TestRoundResult& result) {
-                                metricsReport.addResult(result);
-                            }
+                        // Responder: 接收 Ping，发送 Pong
+                        init_success = bytes_manager->initialize_latency(
+                            [&latency_test_bytes](const DDS::Bytes& s, const DDS::SampleInfo& i) {
+                                latency_test_bytes->onDataReceived(s, i); // 回复 Pong
+                            },
+                            nullptr, // 不接收 Pong
+                            nullptr  // 不处理结束包
                         );
                     }
                 }
-                init_success = true; // initialize_latency 由 LatencyTest 内部负责
+
+                // 确保对象已创建
+                if (init_success && !latency_test_bytes && round == 0) {
+                    latency_test_bytes = std::make_unique<LatencyTest_Bytes>(
+                        *bytes_manager,
+                        [&metricsReport](const TestRoundResult& result) {
+                            metricsReport.addResult(result);
+                        }
+                    );
+                }
             }
 
             if (!init_success && is_throughput_test) {
