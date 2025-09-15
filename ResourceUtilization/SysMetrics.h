@@ -1,15 +1,21 @@
-// SysMetrics.h
 #pragma once
 #include <cstdint>
 
+// 系统资源指标结构体
 struct SysMetrics {
-    double cpu_usage_percent = 0.0;           // 当前进程CPU使用率 (%)
-    uint64_t memory_peak_kb = 0;              // 峰值内存 (KB)
-    uint64_t memory_current_kb = 0;           // 当前内存 (KB)
-    uint64_t memory_alloc_count = 0;          // 总分配次数
-    uint64_t memory_dealloc_count = 0;        // 总释放次数
-    uint64_t memory_current_blocks = 0;       // 当前活跃块数
+    // CPU 使用率峰值 (百分比)
+    // -1.0 表示初始化失败或未获取到数据
+    // >= 0.0 表示有效的峰值百分比
+    double cpu_usage_percent_peak = -1.0;
 
-    // 构造函数（可选）
-    SysMetrics() = default;
+    // 内存相关指标 (单位: KB)
+    unsigned long long memory_peak_kb = 0;
+    unsigned long long memory_current_kb = 0;
+
+    // 内存分配/释放统计
+    unsigned long long memory_alloc_count = 0;
+    unsigned long long memory_dealloc_count = 0;
+
+    // 当前未释放的内存块数
+    long long memory_current_blocks = 0;
 };

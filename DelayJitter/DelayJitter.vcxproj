@@ -21,8 +21,8 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{3531f59b-4057-4c98-b109-80fbb244e286}</ProjectGuid>
-    <RootNamespace>ResourceUtilization</RootNamespace>
+    <ProjectGuid>{cd6fed42-74fe-4aef-9292-251e2ab2fbea}</ProjectGuid>
+    <RootNamespace>DelayJitter</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -70,6 +70,10 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ExternalIncludePath>D:\井九\Documents\大三暑期学校\DDS实训项目\ZRDDS\ZRDDS-2.4.4\include\CPlusPlusInterface;D:\井九\Documents\大三暑期学校\DDS实训项目\ZRDDS\ZRDDS-2.4.4\include\ZRDDSCoreInterface;$(ExternalIncludePath)</ExternalIncludePath>
+    <LibraryPath>D:\井九\Documents\大三暑期学校\DDS实训项目\ZRDDS\ZRDDS-2.4.4\include\CPlusPlusInterface;D:\井九\Documents\大三暑期学校\DDS实训项目\ZRDDS\ZRDDS-2.4.4\include\ZRDDSCoreInterface;D:\井九\Documents\大三暑期学校\DDS实训项目\ZRDDS\ZRDDS-2.4.4\lib;D:\井九\Documents\大三暑期学校\DDS实训项目\experiment\project\x64\Debug;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -93,6 +97,8 @@
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
@@ -100,13 +106,16 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;_ZRDDSCPPINTERFACE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>..\GloMemPool;$(ZRDDS_HOME)\include\ZRDDSCoreInterface;$(ZRDDS_HOME)\include\CPlusPlusInterface;..\Logger</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\Config;..\DDSManager;..\ThroughPut;..\Logger;..\GloMemPool;..\ResourceUtilization;$(ZRDDS_HOME)\include\ZRDDSCoreInterface;$(ZRDDS_HOME)\include\CPlusPlusInterface;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>ZRDDSCppzd_VS2019.lib;Config.lib;DDSManager.lib;Logger.lib;Ws2_32.lib;ThroughPut.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ZRDDS_HOME)\lib</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -120,15 +129,26 @@
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="ResourceUtilization.cpp" />
-    <ClCompile Include="SysMetrics.h" />
+    <ClInclude Include="DR_Pong.h" />
+    <ClInclude Include="DW_Ping.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="ResourceUtilization.h" />
+    <ClCompile Include="DR_Pong.cpp" />
+    <ClCompile Include="DW_Ping.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Config\Config\Config.vcxproj">
+      <Project>{b330a46e-13a8-4d86-9e02-2bab7b9ee916}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\DDSManager\DDSManager\DDSManager.vcxproj">
+      <Project>{fbe7bf9a-9a33-4464-a8f0-375e8f3b3cb5}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

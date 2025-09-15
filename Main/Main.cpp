@@ -38,6 +38,7 @@ int main() {
         // ================= 初始化全局内存池 =================
         if (!GloMemPool::initialize()) {
             std::cerr << "[Error] GloMemPool 初始化失败！" << std::endl;
+            std::cin.get(); // 等待用户按键，防止窗口关闭
             return EXIT_FAILURE;
         }
         Logger::getInstance().logAndPrint("[Memory] 使用 GloMemPool 管理全局内存");
@@ -49,6 +50,7 @@ int main() {
         Config config(json_file_path);
         if (!config.promptAndSelectConfig(&Logger::getInstance())) {
             Logger::getInstance().logAndPrint("用户取消选择或配置加载失败");
+            std::cin.get(); // 等待用户按键，防止窗口关闭
             return EXIT_FAILURE;
         }
 
@@ -62,6 +64,7 @@ int main() {
 
         if (total_rounds <= 0) {
             Logger::getInstance().logAndPrint("[Error] m_loopNum 必须大于 0");
+            std::cin.get(); // 等待用户按键，防止窗口关闭
             return EXIT_FAILURE;
         }
 
@@ -121,6 +124,19 @@ int main() {
                         }
                     );
                 }
+
+                // ==================== 在创建 DDSManager 之后，第一轮测试开始前初始化 ResourceUtilization ====================
+                // 将初始化放在这里，尝试在 ZRDDS 实体创建后、主要数据流开始前来初始化监控，
+                // 希望能解决 PDH_NO_DATA 问题或提高成功率。
+                if (!ResourceUtilization::instance().initialize()) {
+                    Logger::getInstance().logAndPrint("[Warning] ResourceUtilization 初始化失败！CPU 监控可能无效。");
+                    // 根据需求决定是否退出或继续
+                    // return EXIT_FAILURE; // 如果 CPU 监控是必须的，可以取消注释
+                }
+                else {
+                    Logger::getInstance().logAndPrint("[Resource] ResourceUtilization 初始化成功");
+                }
+                // =================================================================================================
             }
 
             // ------------------- 重新初始化 DDSManager -------------------
@@ -220,6 +236,11 @@ int main() {
         ResourceUtilization::instance().shutdown();
         GloMemPool::finalize();
 
+        // --- 新增：程序结束前暂停，防止 cmd 窗口关闭 ---
+        std::cout << "\n程序执行完毕，按任意键退出..." << std::endl;
+        std::cin.get();
+        // --- 新增结束 ---
+
         return total_result == EXIT_SUCCESS ? EXIT_SUCCESS : EXIT_FAILURE;
 
     }
@@ -231,6 +252,8 @@ int main() {
         else {
             std::cerr << errorMsg << std::endl;
         }
+        std::cout << "\n程序因异常终止，按任意键退出..." << std::endl;
+        std::cin.get(); // 等待用户按键，防止窗口关闭
         return EXIT_FAILURE;
     }
     catch (...) {
@@ -241,6 +264,8 @@ int main() {
         else {
             std::cerr << errorMsg << std::endl;
         }
+        std::cout << "\n程序因未捕获异常终止，按任意键退出..." << std::endl;
+        std::cin.get(); // 等待用户按键，防止窗口关闭
         return EXIT_FAILURE;
     }
 }
