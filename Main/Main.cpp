@@ -19,6 +19,7 @@
 #include "GloMemPool.h"
 #include "Throughput_Bytes.h"
 #include "Throughput_ZeroCopyBytes.h"  
+#include "LatencyTest_Bytes.h"
 #include "MetricsReport.h"
 #include "TestRoundResult.h"
 #include "ResourceUtilization.h"
@@ -62,22 +63,44 @@ int main() {
         config.printCurrentConfig(cfgStream);
         Logger::getInstance().logAndPrint(cfgStream.str());
 
+        // ==================== 新增：解析测试类型（吞吐 or 时延）====================
+        std::string config_name = base_config.name;
+        bool is_throughput_test = false;
+        bool is_latency_test = false;
+
+        if (config_name.rfind("tp::", 0) == 0) {
+            is_throughput_test = true;
+            Logger::getInstance().logAndPrint("[Test Mode] 吞吐测试模式 (tp::)");
+        }
+        else if (config_name.rfind("delay::", 0) == 0) {
+            is_latency_test = true;
+            Logger::getInstance().logAndPrint("[Test Mode] 时延测试模式 (delay::)");
+        }
+        else {
+            Logger::getInstance().error("[Test Mode] 配置名 '" + config_name + "' 必须以 'tp::' 或 'delay::' 开头！");
+            std::cin.get();
+            return EXIT_FAILURE;
+        }
+
         if (total_rounds <= 0) {
             Logger::getInstance().logAndPrint("[Error] m_loopNum 必须大于 0");
-            std::cin.get(); // 等待用户按键，防止窗口关闭
+            std::cin.get();
             return EXIT_FAILURE;
         }
 
         Logger::getInstance().logAndPrint("开始执行 " + std::to_string(total_rounds) + " 轮测试...");
 
-        // ==================== 根据配置决定传输模式 ====================
+        // ==================== 根据传输模式选择 Bytes 或 ZeroCopy ====================
         bool is_zero_copy_mode = (base_config.m_typeName == "DDS::ZeroCopyBytes");
 
+        // --- 定义所有可能需要的管理器和测试对象 ---
         std::unique_ptr<DDSManager_Bytes> bytes_manager;
         std::unique_ptr<DDSManager_ZeroCopyBytes> zc_manager;
 
         std::unique_ptr<Throughput_Bytes> throughput_bytes;
         std::unique_ptr<Throughput_ZeroCopyBytes> throughput_zc;
+
+        std::unique_ptr<LatencyTest_Bytes> latency_test_bytes;
 
         MetricsReport metricsReport;
 
@@ -99,113 +122,151 @@ int main() {
             Config::printConfigToStream(current_cfg, roundCfgStream);
             Logger::getInstance().logAndPrint(roundCfgStream.str());
 
-            // ------------------- 创建 Throughput 实例（如果尚未创建）-------------------
-            // 注意：只在第一轮创建，后续复用
+            // ------------------- 第一步：创建 DDSManager（如果尚未创建）-------------------
             if (round == 0) {
                 if (is_zero_copy_mode) {
-                    Logger::getInstance().logAndPrint("启动 ZeroCopyBytes 模式");
-
                     zc_manager = std::make_unique<DDSManager_ZeroCopyBytes>(current_cfg, qos_file_path);
-
-                    throughput_zc = std::make_unique<Throughput_ZeroCopyBytes>(*zc_manager,
-                        [&metricsReport](const TestRoundResult& result) {
-                            metricsReport.addResult(result);
-                        }
-                    );
+                    if (is_throughput_test) {
+                        throughput_zc = std::make_unique<Throughput_ZeroCopyBytes>(
+                            *zc_manager,
+                            [&metricsReport](const TestRoundResult& result) {
+                                metricsReport.addResult(result);
+                            }
+                        );
+                    }
+                    // TODO: if (is_latency_test) latency_test_zc = ...
                 }
                 else {
-                    Logger::getInstance().logAndPrint("启动 Bytes 模式");
-
                     bytes_manager = std::make_unique<DDSManager_Bytes>(current_cfg, qos_file_path);
-
-                    throughput_bytes = std::make_unique<Throughput_Bytes>(*bytes_manager,
-                        [&metricsReport](const TestRoundResult& result) {
-                            metricsReport.addResult(result);
-                        }
-                    );
+                    if (is_throughput_test) {
+                        throughput_bytes = std::make_unique<Throughput_Bytes>(
+                            *bytes_manager,
+                            [&metricsReport](const TestRoundResult& result) {
+                                metricsReport.addResult(result);
+                            }
+                        );
+                    }
+                    else if (is_latency_test) {
+                        latency_test_bytes = std::make_unique<LatencyTest_Bytes>(
+                            *bytes_manager,
+                            [&metricsReport](const TestRoundResult& result) {
+                                metricsReport.addResult(result);
+                            }
+                        );
+                    }
                 }
 
-                // ==================== 在创建 DDSManager 之后，第一轮测试开始前初始化 ResourceUtilization ====================
-                // 将初始化放在这里，尝试在 ZRDDS 实体创建后、主要数据流开始前来初始化监控，
-                // 希望能解决 PDH_NO_DATA 问题或提高成功率。
+                // ==================== 初始化 ResourceUtilization（仅一次）====================
                 if (!ResourceUtilization::instance().initialize()) {
                     Logger::getInstance().logAndPrint("[Warning] ResourceUtilization 初始化失败！CPU 监控可能无效。");
-                    // 根据需求决定是否退出或继续
-                    // return EXIT_FAILURE; // 如果 CPU 监控是必须的，可以取消注释
                 }
                 else {
                     Logger::getInstance().logAndPrint("[Resource] ResourceUtilization 初始化成功");
                 }
-                // =================================================================================================
             }
 
-            // ------------------- 重新初始化 DDSManager -------------------
+            // ------------------- 第二步：重新初始化 DDSManager（每轮都要）-------------------
             bool init_success = false;
 
-            // 每轮都重新定义回调，避免 move 后失效
-            if (is_zero_copy_mode) {
-                if (current_cfg.m_isPositive) {
-                    init_success = zc_manager->initialize();
+            if (is_throughput_test) {
+                if (is_zero_copy_mode) {
+                    if (current_cfg.m_isPositive) {
+                        init_success = zc_manager->initialize();
+                    }
+                    else {
+                        auto end_callback = [&]() { throughput_zc->onEndOfRound(); };
+                        init_success = zc_manager->initialize(
+                            [&](const DDS::ZeroCopyBytes& sample, const DDS::SampleInfo& info) {
+                                throughput_zc->onDataReceived(sample, info);
+                            },
+                            end_callback
+                        );
+                    }
                 }
                 else {
-                    auto end_callback = [&]() { throughput_zc->onEndOfRound(); };
-                    init_success = zc_manager->initialize(
-                        [&](const DDS::ZeroCopyBytes& sample, const DDS::SampleInfo& info) {
-                            throughput_zc->onDataReceived(sample, info);
-                        },
-                        end_callback
-                    );
+                    if (current_cfg.m_isPositive) {
+                        init_success = bytes_manager->initialize();
+                    }
+                    else {
+                        auto end_callback = [&]() { throughput_bytes->onEndOfRound(); };
+                        init_success = bytes_manager->initialize(
+                            [&](const DDS::Bytes& sample, const DDS::SampleInfo& info) {
+                                throughput_bytes->onDataReceived(sample, info);
+                            },
+                            end_callback
+                        );
+                    }
                 }
             }
-            else {
-                if (current_cfg.m_isPositive) {
-                    init_success = bytes_manager->initialize();
+            else if (is_latency_test) {
+                // 注意：LatencyTest_Bytes 内部会在 runXXX 中调用 initialize_latency()
+                // 所以这里不需要提前初始化
+                // 我们只做一次 setup
+                if (round == 0) {
+                    if (is_zero_copy_mode) {
+                        // 假设有 LatencyTest_ZeroCopyBytes
+                        // latency_test_zc = std::make_unique<LatencyTest_ZeroCopyBytes>(*zc_manager, ...);
+                    }
+                    else {
+                        latency_test_bytes = std::make_unique<LatencyTest_Bytes>(
+                            *bytes_manager,
+                            [&metricsReport](const TestRoundResult& result) {
+                                metricsReport.addResult(result);
+                            }
+                        );
+                    }
                 }
-                else {
-                    auto end_callback = [&]() { throughput_bytes->onEndOfRound(); };
-                    init_success = bytes_manager->initialize(
-                        [&](const DDS::Bytes& sample, const DDS::SampleInfo& info) {
-                            throughput_bytes->onDataReceived(sample, info);
-                        },
-                        end_callback
-                    );
-                }
+                init_success = true; // initialize_latency 由 LatencyTest 内部负责
             }
 
-            if (!init_success) {
+            if (!init_success && is_throughput_test) {
                 Logger::getInstance().logAndPrint("[Error] DDSManager 初始化失败（第 " + std::to_string(round + 1) + " 轮）");
                 total_result = EXIT_FAILURE;
                 break;
             }
 
-            // ------------------- Publisher: 等待 Subscriber 重连（从第二轮开始）-------------------
+            // ------------------- 第三步：等待重连（Publisher 角色 + 非首轮回合）-------------------
             if (current_cfg.m_isPositive && round > 0) {
-                Logger::getInstance().logAndPrint("等待订阅者重新上线以启动第 " + std::to_string(round + 1) + " 轮...");
+                Logger::getInstance().logAndPrint("等待订阅者重新上线...");
 
                 bool connected = false;
-                if (is_zero_copy_mode) {
-                    connected = throughput_zc->waitForSubscriberReconnect(std::chrono::seconds(10));
+                if (is_throughput_test) {
+                    connected = is_zero_copy_mode ?
+                        throughput_zc->waitForSubscriberReconnect(std::chrono::seconds(1)) :
+                        throughput_bytes->waitForSubscriberReconnect(std::chrono::seconds(1));
                 }
-                else {
-                    connected = throughput_bytes->waitForSubscriberReconnect(std::chrono::seconds(10));
-                }
-
-                if (!connected) {
+                // 时延模式不使用此机制（由 LatencyTest 自行处理连接）
+                if (!connected && is_throughput_test) {
                     Logger::getInstance().logAndPrint("警告：未检测到订阅者重连，超时继续...");
                 }
             }
 
-            // ------------------- 运行单轮测试 -------------------
+            // ------------------- 第四步：运行单轮测试 -------------------
             int result = 0;
+
             if (current_cfg.m_isPositive) {
-                result = is_zero_copy_mode
-                    ? throughput_zc->runPublisher(current_cfg)
-                    : throughput_bytes->runPublisher(current_cfg);
+                if (is_throughput_test) {
+                    result = is_zero_copy_mode ?
+                        throughput_zc->runPublisher(current_cfg) :
+                        throughput_bytes->runPublisher(current_cfg);
+                }
+                else if (is_latency_test) {
+                    result = is_zero_copy_mode ?
+                        /*latency_test_zc->runPublisher(current_cfg)*/ 0 :  // 未实现
+                        latency_test_bytes->runPublisher(current_cfg);
+                }
             }
             else {
-                result = is_zero_copy_mode
-                    ? throughput_zc->runSubscriber(current_cfg)
-                    : throughput_bytes->runSubscriber(current_cfg);
+                if (is_throughput_test) {
+                    result = is_zero_copy_mode ?
+                        throughput_zc->runSubscriber(current_cfg) :
+                        throughput_bytes->runSubscriber(current_cfg);
+                }
+                else if (is_latency_test) {
+                    result = is_zero_copy_mode ?
+                        /*latency_test_zc->runSubscriber(current_cfg)*/ 0 :
+                        latency_test_bytes->runSubscriber(current_cfg);
+                }
             }
 
             if (result == 0) {
@@ -216,15 +277,26 @@ int main() {
                 total_result = EXIT_FAILURE;
             }
 
-            // ------------------- 清理本轮回合资源 -------------------
-            if (is_zero_copy_mode) {
-                zc_manager->shutdown();
+            // ------------------- 第五步：清理本轮回合资源 -------------------
+            if (is_throughput_test) {
+                if (is_zero_copy_mode) {
+                    zc_manager->shutdown();
+                }
+                else {
+                    bytes_manager->shutdown();
+                }
             }
-            else {
-                bytes_manager->shutdown();
+            // 时延模式：也必须 shutdown（因为 LatencyTest 内部可能调用了 initialize_latency）
+            else if (is_latency_test) {
+                if (is_zero_copy_mode && zc_manager) {
+                    zc_manager->shutdown();
+                }
+                else if (bytes_manager) {
+                    bytes_manager->shutdown();
+                }
             }
 
-            // 防止端口冲突或资源竞争
+            // 缓冲时间，防止端口冲突
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
 
