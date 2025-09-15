@@ -71,8 +71,8 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <ExternalIncludePath>D:\井九\Documents\大三暑期学校\DDS实训项目\ZRDDS\ZRDDS-2.4.4\include\CPlusPlusInterface;D:\井九\Documents\大三暑期学校\DDS实训项目\ZRDDS\ZRDDS-2.4.4\include\ZRDDSCoreInterface;$(ExternalIncludePath)</ExternalIncludePath>
-    <LibraryPath>D:\井九\Documents\大三暑期学校\DDS实训项目\ZRDDS\ZRDDS-2.4.4\include\CPlusPlusInterface;D:\井九\Documents\大三暑期学校\DDS实训项目\ZRDDS\ZRDDS-2.4.4\include\ZRDDSCoreInterface;D:\井九\Documents\大三暑期学校\DDS实训项目\ZRDDS\ZRDDS-2.4.4\lib;D:\井九\Documents\大三暑期学校\DDS实训项目\experiment\project\x64\Debug;$(LibraryPath)</LibraryPath>
+    <ExternalIncludePath>$(ExternalIncludePath)</ExternalIncludePath>
+    <LibraryPath>$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -134,14 +134,6 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\Config\Config\Config.vcxproj">
-      <Project>{b330a46e-13a8-4d86-9e02-2bab7b9ee916}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\DDSManager\DDSManager\DDSManager.vcxproj">
-      <Project>{fbe7bf9a-9a33-4464-a8f0-375e8f3b3cb5}</Project>
-    </ProjectReference>
-  </ItemGroup>
   <ItemGroup>
     <ClInclude Include="LatencyTest_Bytes.h" />
   </ItemGroup>

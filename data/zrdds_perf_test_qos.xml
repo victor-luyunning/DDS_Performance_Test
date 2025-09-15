@@ -1,9 +1,17 @@
 <zrdds_qos xmlns="http://www.omg.org/dds/">
   <qos_library name="default_lib">
     <qos_profile name="default_profile">
+      <!-- 修改后的 participantfactory_qos -->
       <participantfactory_qos name="default">
         <property>
           <value>
+            <!-- 新增：设置内存池模式为 0 (使用系统 malloc/free) -->
+            <element>
+              <name>sysctl.global.mempool.mem_mode</name>
+              <value>0</value>
+              <propagate>false</propagate>
+            </element>
+            <!-- 原有配置保持不变 -->
             <element>
               <name>sysctl.global.net.zrnet_ipv4_tcp_max_packet_length</name>
               <value>4194304</value>

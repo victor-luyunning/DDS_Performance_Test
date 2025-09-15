@@ -9,7 +9,7 @@ std::unordered_map<void*, size_t> GloMemPool::s_alloc_map;
 
 bool GloMemPool::initialize() {
     ZRInitialGlobalMemPool();
-    // s_pool = nullptr;// 默认全局池（可选）
+    s_pool = nullptr;// 默认全局池（可选）
     return true;
 }
 

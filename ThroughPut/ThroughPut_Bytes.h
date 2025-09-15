@@ -6,7 +6,6 @@
 #include <mutex>
 #include <condition_variable>
 #include <functional>
-#include <set>
 
 struct TestRoundResult;
 
@@ -54,7 +53,4 @@ private:
     std::chrono::steady_clock::time_point end_packet_time_;
 
     mutable std::mutex time_mutex_;  // 多线程安全
-
-    std::set<uint32_t> received_sequences_;
-    mutable std::mutex received_seqs_mutex_;  // 保护 received_sequences_
 };

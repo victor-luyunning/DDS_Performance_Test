@@ -14,12 +14,11 @@
 #include <chrono>
 #include <sstream>
 #include <iomanip>
-#include <algorithm>
 
 using namespace DDS;
 struct PacketHeader {
     uint32_t sequence;     // 序列号
-    uint64_t timestamp;    // 发送时间（纳秒）
+    //uint64_t timestamp;    // 发送时间（纳秒）
     uint8_t  packet_type;
 };
 
@@ -176,18 +175,22 @@ int Throughput_Bytes::runPublisher(const ConfigData& config) {
 
     DDS::Bytes sample;
 
-    // === 删除这里手动 prepare 一次 buffer 的操作 ===
-    // 我们在循环内每次调用 prepareBytesData 即可
+    // 准备测试数据（只准备一次，后续复用 buffer）
+    if (!ddsManager_.prepareBytesData(sample, minSize, maxSize, 0, 0)) {
+        Logger::getInstance().logAndPrint("Throughput_Bytes: 准备测试数据失败");
+        return -1;
+    }
+
+    // 获取 contiguous buffer 指针（提前获取，避免重复调用）
+    uint8_t* buffer = sample.value.get_contiguous_buffer();
+    if (!buffer) {
+        Logger::getInstance().error("Throughput_Bytes: 内存 buffer 为空");
+        return -1;
+    }
 
     // === 发送主循环 ===
     for (int j = 0; j < sendCount; ++j) {
-        // 使用 j 作为 sequence，高精度时间戳可选
-        uint64_t ts = std::chrono::steady_clock::now().time_since_epoch().count(); // 纳秒级时间戳
-
-		if (!ddsManager_.prepareBytesData(sample, minSize, maxSize, j, 0)) {// 准备数据（sequence, timestamp）
-            Logger::getInstance().error("Throughput_Bytes: 准备第 " + std::to_string(j) + " 条测试数据失败");
-            return -1;
-        }
+        *reinterpret_cast<uint32_t*>(buffer) = j;
 
         DDS::ReturnCode_t ret = writer->write(sample, DDS_HANDLE_NIL_NATIVE);
         if (ret == DDS::RETCODE_OK) {
@@ -205,6 +208,8 @@ int Throughput_Bytes::runPublisher(const ConfigData& config) {
     writer->wait_for_acknowledgments({ 10, 0 });  // 10秒超时
 
     // === 发送结束包（标记本轮结束）===
+    // === 发送结束包 ===
+    // 发送结束包
     ddsManager_.cleanupBytesData(sample);
     if (ddsManager_.prepareEndBytesData(sample, minSize)) {
         if (sample.value.length() > 0) {
@@ -236,6 +241,7 @@ int Throughput_Bytes::runPublisher(const ConfigData& config) {
 // runSubscriber - 接收逻辑
 // ========================
 int Throughput_Bytes::runSubscriber(const ConfigData& config) {
+    // 不需要 take，只需要确保 DataReader 存在
     DDS::DataReader* raw_reader = ddsManager_.get_data_reader();
     if (!raw_reader) {
         Logger::getInstance().logAndPrint("Throughput_Bytes: DataReader 为空");
@@ -259,23 +265,32 @@ int Throughput_Bytes::runSubscriber(const ConfigData& config) {
 
     // 重置状态
     receivedCount_.store(0);
-    {
-        std::lock_guard<std::mutex> lock(received_seqs_mutex_);
-        received_sequences_.clear();
-    }
     roundFinished_.store(false);
 
+    // 用于计时（由回调设置）
+    std::chrono::steady_clock::time_point start_time;
+    std::chrono::steady_clock::time_point end_time;
+    bool first_packet_received = false;
+
+    // === 设置本地 lambda 捕获计时变量 ===
+    // 注意：这里不能直接改 onDataReceived，而是让回调更新这些状态
+    // 所以你需要一个方式让外部知道第一个包时间
+    // 我们用成员变量或共享状态（推荐用成员变量）
+
+    // 👇 假设你已将以下变量提升为 Throughput_Bytes 的成员：
+    //     std::chrono::steady_clock::time_point first_packet_time_;
+    //     std::chrono::steady_clock::time_point end_packet_time_;
+
+    // 这里我们假设你已经通过其他方式记录了这两个时间（见下方说明）
+
     // === 阻塞等待测试结束信号 ===
-    waitForRoundEnd();  // <-- 这里会一直阻塞，直到 onEndOfRound 被调用
+    waitForRoundEnd();  // 会阻塞直到 onEndOfRound() 被调用
 
     // === 测试结束，读取计时结果 ===
-    std::chrono::steady_clock::time_point start_time, end_time;
-    {
-        std::lock_guard<std::mutex> lock(time_mutex_);
-        start_time = first_packet_time_;
-        end_time = end_packet_time_;
-    }
+    start_time = first_packet_time_;   // 来自 onDataReceived 的记录
+    end_time = end_packet_time_;       // 来自 onEndOfRound 的记录
 
+    // 如果没收到任何包
     if (start_time.time_since_epoch().count() == 0) {
         Logger::getInstance().logAndPrint("警告：未收到任何有效数据包");
     }
@@ -309,55 +324,13 @@ int Throughput_Bytes::runSubscriber(const ConfigData& config) {
     int lost = expected - received;
     double lossRate = expected > 0 ? (double)lost / expected * 100.0 : 0.0;
 
-    {
-        std::lock_guard<std::mutex> lock(received_seqs_mutex_);
-        std::set<uint32_t> expected_seqs;
-        for (uint32_t i = 0; i < static_cast<uint32_t>(expected); ++i) {
-            expected_seqs.insert(i);
-        }
-
-        std::vector<uint32_t> lost_packets;
-        std::set_difference(
-            expected_seqs.begin(), expected_seqs.end(),
-            received_sequences_.begin(), received_sequences_.end(),
-            std::back_inserter(lost_packets)
-        );
-
-        if (!lost_packets.empty()) {
-            std::ostringstream oss;
-            oss << "丢失的数据包序号: ";
-            for (size_t i = 0; i < std::min(lost_packets.size(), static_cast<size_t>(50)); ++i)
-            if (lost_packets.size() > 50) {
-                oss << "...";
-            }
-            Logger::getInstance().logAndPrint(oss.str());
-        }
-
-        // 清空集合，为下一轮测试做准备
-        received_sequences_.clear();
-    }
-
-    // === 上报资源使用 & 完整测试结果 ===
+    // === 上报资源使用 ===
     SysMetrics end_metrics = resUtil.collectCurrentMetrics();
-
     if (result_callback_) {
-        TestRoundResult result(round_index + 1, start_metrics, end_metrics, TestType::THROUGHPUT);
-
-        result.total_duration_s = duration_seconds;
-        result.sent_count = expected;                    // 发送总数来自配置
-        result.received_count = received;
-        result.loss_rate_percent = lossRate;
-        result.throughput_mbps = throughput_mbps;
-        result.throughput_pps = throughput_pps;
-        result.avg_packet_size_bytes = avg_packet_size;
-
-        // 可选：记录 CPU 使用历史（如果 ResourceUtilization 支持）
-        // result.cpu_usage_history = resUtil.get_cpu_usage_history(); // 视实现而定
-
-        result_callback_(result);
+        result_callback_(TestRoundResult{ round_index + 1, start_metrics, end_metrics });
     }
 
-    // === 输出汇总结果 ===
+    // === 输出结果 ===
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(2)
         << "吞吐量测试 (Listener模式) | 第 " << (round_index + 1) << " 轮 | "
@@ -377,27 +350,16 @@ int Throughput_Bytes::runSubscriber(const ConfigData& config) {
 // 回调函数
 // ========================
 
-void Throughput_Bytes::onDataReceived(const DDS::Bytes& sample, const DDS::SampleInfo& info) {
+void Throughput_Bytes::onDataReceived(const DDS::Bytes& /*sample*/, const DDS::SampleInfo& info) {
     if (!info.valid_data) return;
 
-    uint8_t* buffer = sample.value.get_contiguous_buffer();
-    if (!buffer || sample.value.length() < sizeof(uint32_t)) return;
-
-    uint32_t seq = *reinterpret_cast<uint32_t*>(buffer);
-
     int64_t count = receivedCount_.fetch_add(1, std::memory_order_relaxed) + 1;
-
-    // === 新增：记录序列号用于丢包分析 ===
-    {
-        std::lock_guard<std::mutex> lock(received_seqs_mutex_);
-        received_sequences_.insert(seq);  // 存储收到的所有序号（可用于后期分析）
-    }
 
     // 记录第一个包的时间
     if (count == 1) {
         std::lock_guard<std::mutex> lock(time_mutex_);
         first_packet_time_ = std::chrono::steady_clock::now();
-        Logger::getInstance().logAndPrint("收到第一个数据包(seq=" + std::to_string(seq) + ")，开始计时...");
+        Logger::getInstance().logAndPrint("收到第一个数据包，开始计时...");
     }
 }
 

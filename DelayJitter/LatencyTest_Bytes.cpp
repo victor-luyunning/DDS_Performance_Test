@@ -31,7 +31,7 @@ LatencyTest_Bytes::LatencyTest_Bytes(DDSManager_Bytes& dds_manager, ResultCallba
 LatencyTest_Bytes::~LatencyTest_Bytes() = default;
 
 // ========================
-// 回调函数：由 DataReader 触发
+// 回调函数：由 DataReader 触发（Responder 模式下处理 Ping）
 // ========================
 
 void LatencyTest_Bytes::onDataReceived(const DDS::Bytes& sample, const DDS::SampleInfo& info) {
@@ -54,7 +54,7 @@ void LatencyTest_Bytes::onDataReceived(const DDS::Bytes& sample, const DDS::Samp
 
         PacketHeader* out_hdr = reinterpret_cast<PacketHeader*>(
             pong_sample.value.get_contiguous_buffer());
-        out_hdr->packet_type = DATA_PACKET;
+        out_hdr->packet_type = DATA_PACKET; // 确保标记为数据包
 
         ZRDDSDataWriter<DDS::Bytes>* pong_writer =
             dynamic_cast<ZRDDSDataWriter<DDS::Bytes>*>(dds_manager_.get_Pong_data_writer());
@@ -68,19 +68,19 @@ void LatencyTest_Bytes::onDataReceived(const DDS::Bytes& sample, const DDS::Samp
 
     dds_manager_.cleanupBytesData(pong_sample);
 
-    // 可选：打印日志
+    // 可选日志
     static int count = 0;
-    if (++count % 100000 == 0) {
+    if (++count % 10000 == 0) {
         Logger::getInstance().logAndPrint("已回复 " + to_string(count) + " 个 Pong");
     }
 }
 
 void LatencyTest_Bytes::onEndOfRound() {
-    // 本模块不使用此回调
+    // 本模块不使用结束包触发行为
 }
 
 // ========================
-// 报告时延结果（必须实现）
+// 报告结果
 // ========================
 
 void LatencyTest_Bytes::report_results(int round_index, int expected_count, int avg_packet_size) {
@@ -111,14 +111,18 @@ void LatencyTest_Bytes::report_results(int round_index, int expected_count, int 
 }
 
 // ========================
-// runPublisher - 发送 Ping 并等待 Pong
+// runPublisher - Initiator: 发送 Ping 并接收 Pong
 // ========================
 
 int LatencyTest_Bytes::runPublisher(const ConfigData& config) {
     using WriterType = ZRDDSDataWriter<DDS::Bytes>;
+    using ReaderType = ZRDDSDataReader<DDS::Bytes, DDS::BytesSeq>;
+
     WriterType* ping_writer = dynamic_cast<WriterType*>(dds_manager_.get_Ping_data_writer());
+    ReaderType* pong_reader = dynamic_cast<ReaderType*>(dds_manager_.get_Pong_data_reader());
+
     if (!ping_writer) {
-        Logger::getInstance().logAndPrint("LatencyTest_Bytes: Ping DataWriter 为空");
+        Logger::getInstance().error("LatencyTest_Bytes: Ping DataWriter 为空");
         return -1;
     }
 
@@ -128,35 +132,36 @@ int LatencyTest_Bytes::runPublisher(const ConfigData& config) {
     const int send_count = config.m_sendCount[round_index];
     const int print_gap = config.m_sendPrintGap[round_index];
 
-    // ✅ 使用标准方法等待匹配（替代 wait_for_subscriptions）
+    // ✅ 等待匹配（确保 Responder 已上线）
     if (!ping_writer->wait_for_acknowledgments({ 10, 0 })) {
         Logger::getInstance().logAndPrint("LatencyTest_Bytes: 等待 Subscriber ACK 超时");
         return -1;
     }
 
     ostringstream oss;
-    oss << "第 " << (round_index + 1) << " 轮时延测试 | 发送: " << send_count
+    oss << "第 " << (round_index + 1) << " 轮时延测试（Initiator）| 发送: " << send_count
         << " 次 | 数据大小: [" << min_size << ", " << max_size << "]";
     Logger::getInstance().logAndPrint(oss.str());
 
     auto& resUtil = ResourceUtilization::instance();
-    resUtil.initialize();
     SysMetrics start_metrics = resUtil.collectCurrentMetrics();
+    start_time_ = chrono::steady_clock::now();
 
     Bytes ping_sample;
     rtt_times_us_.clear();
     received_sequences_.clear();
 
-    // 初始化接收 Pong 的 listener
-    bool init_ok = dds_manager_.initialize(
-        DDSManager_Bytes::TestMode::LATENCY,
-        nullptr,
-        [this](const DDS::Bytes& s, const DDS::SampleInfo& i) { onDataReceived(s, i); },
-        nullptr
+    // 🔁 初始化时延模式：收 Pong 包
+    bool init_ok = dds_manager_.initialize_latency(
+        nullptr,                              // 我不关心谁发了 Ping
+        [this](const DDS::Bytes& s, const DDS::SampleInfo& i) {
+            this->handlePongReceived(s, i);   // 处理回包
+        },
+        nullptr                               // 不处理结束包
     );
 
     if (!init_ok) {
-        Logger::getInstance().error("LatencyTest_Bytes: 初始化失败");
+        Logger::getInstance().error("LatencyTest_Bytes: 初始化作为 Initiator 失败");
         return -1;
     }
 
@@ -167,7 +172,7 @@ int LatencyTest_Bytes::runPublisher(const ConfigData& config) {
         ).count();
 
         if (!dds_manager_.prepareBytesData(ping_sample, min_size, max_size, i, send_timestamp_us)) {
-            Logger::getInstance().error("LatencyTest_Bytes: 准备第 " + to_string(i) + " 个 Ping 包失败");
+            Logger::getInstance().error("准备第 " + to_string(i) + " 个 Ping 包失败");
             continue;
         }
 
@@ -187,68 +192,82 @@ int LatencyTest_Bytes::runPublisher(const ConfigData& config) {
 
         dds_manager_.cleanupBytesData(ping_sample);
 
-        this_thread::sleep_for(chrono::microseconds(100));
+        this_thread::sleep_for(chrono::microseconds(0)); // 使用配置间隔
     }
 
-    // 等待回复
-    this_thread::sleep_for(chrono::seconds(10));
+    // ✅ 等待所有回复
+    this_thread::sleep_for(chrono::seconds(5));
 
-    // 上报完整结果
+    end_time_ = chrono::steady_clock::now();
     SysMetrics end_metrics = resUtil.collectCurrentMetrics();
 
-    if (result_callback_ && !rtt_times_us_.empty()) {
-        int received = static_cast<int>(received_sequences_.size());
-        int lost = send_count - received;
-        double loss_rate = send_count > 0 ? (double)lost / send_count * 100.0 : 0.0;
+    // 📊 计算并打印时延统计（仅日志输出，暂不上报）
+    int received = static_cast<int>(received_sequences_.size());
+    int lost = send_count - received;
+    double loss_rate = send_count > 0 ? (double)lost / send_count * 100.0 : 0.0;
 
-        double duration_seconds = 0.0;
-        if (start_time_.time_since_epoch().count() && end_time_.time_since_epoch().count()) {
-            duration_seconds = chrono::duration<double>(end_time_ - start_time_).count();
-        }
+    double duration_seconds = chrono::duration<double>(end_time_ - start_time_).count();
 
-        double min_rtt = *min_element(rtt_times_us_.begin(), rtt_times_us_.end());
-        double max_rtt = *max_element(rtt_times_us_.begin(), rtt_times_us_.end());
-        double avg_rtt = accumulate(rtt_times_us_.begin(), rtt_times_us_.end(), 0.0) / rtt_times_us_.size();
+    double min_rtt = rtt_times_us_.empty() ? 0.0 : *min_element(rtt_times_us_.begin(), rtt_times_us_.end());
+    double max_rtt = rtt_times_us_.empty() ? 0.0 : *max_element(rtt_times_us_.begin(), rtt_times_us_.end());
+    double avg_rtt = rtt_times_us_.empty() ? 0.0 : accumulate(rtt_times_us_.begin(), rtt_times_us_.end(), 0.0) / rtt_times_us_.size();
 
-        TestRoundResult result(round_index + 1, start_metrics, end_metrics, TestType::LATENCY);
-        result.total_duration_s = duration_seconds;
-        result.sent_count = send_count;
-        result.received_count = received;
-        result.loss_rate_percent = loss_rate;
-        result.avg_packet_size_bytes = min_size;
-        result.avg_rtt_us = avg_rtt;
-        result.min_rtt_us = min_rtt;
-        result.max_rtt_us = max_rtt;
-        result.rtt_samples_us = rtt_times_us_;
+    oss << fixed << setprecision(2);
+    oss << "=== 第 " << (round_index + 1) << " 轮时延测试完成 ===\n"
+        << "  发送 Ping 数: " << send_count << "\n"
+        << "  收到 Pong 数: " << received << "\n"
+        << "     丢包数量: " << lost << "\n"
+        << "     丢包率:   " << loss_rate << "%\n"
+        << "  测试持续时间: " << duration_seconds << " 秒\n"
+        << "  数据包大小:   [" << min_size << ", " << max_size << "] 字节\n"
+        << "  RTT 统计:\n"
+        << "     平均 RTT:  " << avg_rtt << " μs\n"
+        << "     最小 RTT:  " << min_rtt << " μs\n"
+        << "     最大 RTT:  " << max_rtt << " μs";
 
-        result_callback_(result);
-    }
+    Logger::getInstance().logAndPrint(oss.str());
 
-    report_results(round_index, send_count, min_size);
     return 0;
 }
 
 // ========================
-// runSubscriber - 接收 Ping 并回复 Pong
+// handlePongReceived - 处理从 Pong Reader 收到的数据
+// ========================
+
+void LatencyTest_Bytes::handlePongReceived(const DDS::Bytes& sample, const DDS::SampleInfo& info) {
+    if (!info.valid_data) return;
+
+    const uint8_t* buffer = sample.value.get_contiguous_buffer();
+    if (!buffer || sample.value.length() < sizeof(PacketHeader)) return;
+
+    const PacketHeader* hdr = reinterpret_cast<const PacketHeader*>(buffer);
+    if (hdr->packet_type != DATA_PACKET) return;
+
+    uint64_t recv_time_us = chrono::duration_cast<chrono::microseconds>(
+        chrono::steady_clock::now().time_since_epoch()
+    ).count();
+
+    int64_t rtt = static_cast<int64_t>(recv_time_us - hdr->timestamp_us);
+    if (rtt > 0) {
+        rtt_times_us_.push_back(static_cast<double>(rtt));
+    }
+
+    received_sequences_.insert(hdr->sequence);
+}
+
+// ========================
+// runSubscriber - Responder: 接收 Ping 并自动回 Pong
 // ========================
 
 int LatencyTest_Bytes::runSubscriber(const ConfigData& config) {
     using ReaderType = ZRDDSDataReader<DDS::Bytes, DDS::BytesSeq>;
     ReaderType* ping_reader = dynamic_cast<ReaderType*>(dds_manager_.get_Ping_data_reader());
     if (!ping_reader) {
-        Logger::getInstance().logAndPrint("LatencyTest_Bytes: Ping DataReader 为空");
-        return -1;
-    }
-
-    using WriterType = ZRDDSDataWriter<DDS::Bytes>;
-    WriterType* pong_writer = dynamic_cast<WriterType*>(dds_manager_.get_Pong_data_writer());
-    if (!pong_writer) {
-        Logger::getInstance().logAndPrint("LatencyTest_Bytes: Pong DataWriter 为空");
+        Logger::getInstance().error("LatencyTest_Bytes: Ping DataReader 为空");
         return -1;
     }
 
     const int round_index = config.m_activeLoop;
-    const int recv_print_gap = config.m_recvPrintGap[round_index];
 
     // 等待 Publisher 匹配
     while (true) {
@@ -259,26 +278,26 @@ int LatencyTest_Bytes::runSubscriber(const ConfigData& config) {
         this_thread::sleep_for(chrono::seconds(1));
     }
 
-    Logger::getInstance().logAndPrint("第 " + to_string(round_index + 1) + " 轮时延测试开始（订阅者模式）");
+    Logger::getInstance().logAndPrint("第 " + to_string(round_index + 1) + " 轮时延测试开始（Responder 模式）");
 
     auto& resUtil = ResourceUtilization::instance();
-    resUtil.initialize();
     SysMetrics start_metrics = resUtil.collectCurrentMetrics();
 
-    // 初始化监听器：收到 Ping 自动回 Pong
-    bool init_ok = dds_manager_.initialize(
-        DDSManager_Bytes::TestMode::LATENCY,
-        [this](const DDS::Bytes& s, const DDS::SampleInfo& i) { onDataReceived(s, i); },
-        nullptr,
-        nullptr
+    // 🔁 初始化：只监听 Ping，自动回 Pong
+    bool init_ok = dds_manager_.initialize_latency(
+        [this](const DDS::Bytes& s, const DDS::SampleInfo& i) {
+            this->onDataReceived(s, i);   // 自动回复 Pong
+        },
+        nullptr,                          // 不接收 Pong（我是 Responder）
+        nullptr                           // 不处理结束包
     );
 
     if (!init_ok) {
-        Logger::getInstance().error("LatencyTest_Bytes: Subscriber 初始化失败");
+        Logger::getInstance().error("LatencyTest_Bytes: Responder 初始化失败");
         return -1;
     }
 
-    // 保持运行
+    // 持续运行
     while (true) {
         this_thread::sleep_for(chrono::seconds(1));
     }
