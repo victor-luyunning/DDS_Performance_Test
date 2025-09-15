@@ -18,11 +18,17 @@
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="TestRoundResult.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="TestRoundResult.cpp" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{3f7c1fca-07c1-450b-96c8-59fefd3ec263}</ProjectGuid>
-    <RootNamespace>ThroughPut</RootNamespace>
+    <ProjectGuid>{d831c23b-f799-441a-894e-a24d32bbd0a5}</ProjectGuid>
+    <RootNamespace>TestRoundResult</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -100,16 +106,13 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;_ZRDDSCPPINTERFACE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ZRDDS_HOME)\include\ZRDDSCoreInterface;$(ZRDDS_HOME)\include\CPlusPlusInterface;..\DDSManager;..\Config;..\testdata;..\Logger;..\GloMemPool;..\ResourceUtilization;..\TestRoundResult;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>..\ResourceUtilization;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ZRDDS_HOME)\lib;</AdditionalLibraryDirectories>
-      <AdditionalDependencies>ZRDDSCppzd_VS2019.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -126,14 +129,6 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
-  <ItemGroup>
-    <ClCompile Include="ThroughPut_Bytes.cpp" />
-    <ClCompile Include="ThroughPut_ZeroCopyBytes.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="ThroughPut_Bytes.h" />
-    <ClInclude Include="ThroughPut_ZeroCopyBytes.h" />
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

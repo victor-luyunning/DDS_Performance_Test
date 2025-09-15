@@ -24,6 +24,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MetricsReport", "..\Metrics
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DelayJitter", "..\DelayJitter\DelayJitter.vcxproj", "{CD6FED42-74FE-4AEF-9292-251E2AB2FBEA}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TestRoundResult", "..\TestRoundResult\TestRoundResult.vcxproj", "{D831C23B-F799-441A-894E-A24D32BBD0A5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug DLL|x64 = Debug DLL|x64
@@ -120,6 +122,14 @@ Global
 		{CD6FED42-74FE-4AEF-9292-251E2AB2FBEA}.Release DLL|x64.Build.0 = Release|x64
 		{CD6FED42-74FE-4AEF-9292-251E2AB2FBEA}.Release|x64.ActiveCfg = Release|x64
 		{CD6FED42-74FE-4AEF-9292-251E2AB2FBEA}.Release|x64.Build.0 = Release|x64
+		{D831C23B-F799-441A-894E-A24D32BBD0A5}.Debug DLL|x64.ActiveCfg = Debug|x64
+		{D831C23B-F799-441A-894E-A24D32BBD0A5}.Debug DLL|x64.Build.0 = Debug|x64
+		{D831C23B-F799-441A-894E-A24D32BBD0A5}.Debug|x64.ActiveCfg = Debug|x64
+		{D831C23B-F799-441A-894E-A24D32BBD0A5}.Debug|x64.Build.0 = Debug|x64
+		{D831C23B-F799-441A-894E-A24D32BBD0A5}.Release DLL|x64.ActiveCfg = Release|x64
+		{D831C23B-F799-441A-894E-A24D32BBD0A5}.Release DLL|x64.Build.0 = Release|x64
+		{D831C23B-F799-441A-894E-A24D32BBD0A5}.Release|x64.ActiveCfg = Release|x64
+		{D831C23B-F799-441A-894E-A24D32BBD0A5}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

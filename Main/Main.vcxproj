@@ -102,14 +102,14 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;_ZRDDSCPPINTERFACE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>..\include;..\Config;..\DDSManager;..\Logger;$(ZRDDS_HOME)\include\CPlusPlusInterface;$(ZRDDS_HOME)\include\ZRDDSCoreInterface;..\GloMemPool;..\ThroughPut;..\MetricsReport;..\ResourceUtilization;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\include;..\Config;..\DDSManager;..\Logger;$(ZRDDS_HOME)\include\CPlusPlusInterface;$(ZRDDS_HOME)\include\ZRDDSCoreInterface;..\GloMemPool;..\ThroughPut;..\MetricsReport;..\ResourceUtilization;..\DelayJitter;..\TestRoundResult;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(ZRDDS_HOME)\lib;..\testdata\x64\Debug;D:\Windows Kits\10\Lib\10.0.26100.0\um\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>ZRDDSCppzd_VS2019.lib;Config.lib;DDSManager.lib;Logger.lib;GloMemPool.lib;ThroughPut.lib;ResourceUtilization.lib;MetricsReport.lib;Ws2_32.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ZRDDSCppzd_VS2019.lib;Config.lib;DDSManager.lib;Logger.lib;GloMemPool.lib;ThroughPut.lib;ResourceUtilization.lib;MetricsReport.lib;Ws2_32.lib;DelayJitter.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">

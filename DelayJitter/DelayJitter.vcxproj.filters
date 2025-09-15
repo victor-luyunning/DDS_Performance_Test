@@ -15,18 +15,12 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="DW_Ping.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="DR_Pong.h">
+    <ClInclude Include="LatencyTest_Bytes.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="DW_Ping.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="DR_Pong.cpp">
+    <ClCompile Include="LatencyTest_Bytes.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

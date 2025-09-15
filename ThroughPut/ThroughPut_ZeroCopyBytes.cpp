@@ -305,10 +305,24 @@ int Throughput_ZeroCopyBytes::runSubscriber(const ConfigData& config) {
     int lost = expected - received;
     double lossRate = expected > 0 ? static_cast<double>(lost) / expected * 100.0 : 0.0;
 
-    // === 上报资源使用 ===
+    // === 上报资源使用 & 完整测试结果 ===
     SysMetrics end_metrics = resUtil.collectCurrentMetrics();
+
     if (result_callback_) {
-        result_callback_(TestRoundResult{ round_index + 1, start_metrics, end_metrics });
+        TestRoundResult result(round_index + 1, start_metrics, end_metrics, TestType::THROUGHPUT);
+
+        result.total_duration_s = duration_seconds;
+        result.sent_count = expected;                    // 发送总数来自配置
+        result.received_count = received;
+        result.loss_rate_percent = lossRate;
+        result.throughput_mbps = throughput_mbps;
+        result.throughput_pps = throughput_pps;
+        result.avg_packet_size_bytes = avg_packet_size;
+
+        // 可选：记录 CPU 使用历史（如果 ResourceUtilization 支持）
+        // result.cpu_usage_history = resUtil.get_cpu_usage_history(); // 视实现而定
+
+        result_callback_(result);
     }
 
     // === 输出结果 ===
